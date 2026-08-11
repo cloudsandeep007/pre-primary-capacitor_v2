@@ -1,5 +1,7 @@
 import { RouterProvider, useRouter } from '@/lib/router';
 import { ToastContainer } from '@/components/Toast';
+import { PWAInstallBanner } from '@/components/PWAInstallBanner';
+import { PWAUpdatePrompt } from '@/components/PWAUpdatePrompt';
 import { LandingPage } from '@/pages/LandingPage';
 import { StaffPortal } from '@/pages/staff/StaffPortal';
 import { ParentPortal } from '@/pages/parent/ParentPortal';
@@ -13,6 +15,8 @@ function AppContent() {
   return (
     <>
       <ToastContainer />
+      <PWAInstallBanner />
+      <PWAUpdatePrompt />
       {route === '/' && <LandingPage />}
       {route === '/staff' && <StaffPortal />}
       {route === '/parent' && <ParentPortal />}
