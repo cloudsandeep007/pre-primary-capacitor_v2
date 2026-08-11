@@ -138,6 +138,15 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
             </Button>
           </form>
 
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => navigate('/onboarding/staff')}
+              className="text-xs font-semibold text-sky-600 hover:text-sky-700 underline"
+            >
+              ➕ New Teacher? Complete Onboarding & Photo Setup
+            </button>
+          </div>
+
           <div className="mt-6 text-center bg-sky-50/50 border border-sky-100 rounded-2xl p-4">
             <p className="text-xs font-semibold text-sky-800 mb-2">Try Demo Teacher Accounts:</p>
             <div className="grid grid-cols-2 gap-2 text-xs">

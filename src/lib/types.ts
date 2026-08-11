@@ -10,6 +10,8 @@ export interface Staff {
   password: string;
   name: string;
   assigned_class?: ClassLevel | 'All';
+  photo_url?: string;
+  role?: 'staff' | 'admin';
 }
 
 export interface Student {
@@ -18,6 +20,10 @@ export interface Student {
   pin: string;
   name: string;
   class_name: ClassLevel;
+  guardian_name?: string;
+  parent_phone?: string;
+  student_photo_url?: string;
+  parent_photo_url?: string;
 }
 
 export interface MediaItem {
@@ -63,4 +69,6 @@ export interface GatePass {
   status: 'PENDING' | 'APPROVED' | 'COMPLETED';
   pass_date: string;
   created_at: string;
+  student_photo_url?: string | null;
+  parent_photo_url?: string | null;
 }

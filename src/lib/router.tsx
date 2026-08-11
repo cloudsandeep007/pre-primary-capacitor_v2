@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
-type Route = '/' | '/staff' | '/parent';
+export type Route = '/' | '/staff' | '/parent' | '/admin' | '/onboarding/staff' | '/onboarding/parent';
 
 interface RouterContextValue {
   route: Route;
@@ -13,6 +13,9 @@ function getRouteFromHash(): Route {
   const hash = window.location.hash.replace('#', '');
   if (hash === '/staff') return '/staff';
   if (hash === '/parent') return '/parent';
+  if (hash === '/admin') return '/admin';
+  if (hash === '/onboarding/staff') return '/onboarding/staff';
+  if (hash === '/onboarding/parent') return '/onboarding/parent';
   return '/';
 }
 

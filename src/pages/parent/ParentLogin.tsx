@@ -157,12 +157,20 @@ export function ParentLogin({ onLogin }: ParentLoginProps) {
             </Button>
           </form>
 
-          <button
-            onClick={fillDemo}
-            className="mt-4 w-full text-center text-sm text-teal-600 hover:text-teal-700 font-medium transition-colors"
-          >
-            Use demo credentials (Roll 101 / PIN 1234)
-          </button>
+          <div className="mt-4 text-center space-y-2">
+            <button
+              onClick={() => navigate('/onboarding/parent')}
+              className="block w-full text-xs font-semibold text-teal-600 hover:text-teal-700 underline"
+            >
+              👨‍👩‍👧 New Parent? Complete Onboarding & Register Photos
+            </button>
+            <button
+              onClick={fillDemo}
+              className="block w-full text-center text-xs text-gray-400 hover:text-teal-600 font-medium transition-colors"
+            >
+              Use demo credentials (Roll 101 / PIN 1234)
+            </button>
+          </div>
         </div>
       </div>
     </div>

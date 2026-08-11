@@ -18,20 +18,36 @@ export function ParentGatePassModal({ student, onClose }: ParentGatePassModalPro
   useEffect(() => {
     fetchOrCreatePass();
 
-    // Auto-poll every 3 seconds for real-time status updates
+    // Auto-poll every 2 seconds for real-time status updates
     const interval = setInterval(() => {
       fetchOrCreatePass(true);
-    }, 3000);
+    }, 2000);
 
-    // Also listen for cross-tab localStorage updates
-    const handleStorageChange = () => {
-      fetchOrCreatePass(true);
-    };
-    window.addEventListener('storage', handleStorageChange);
+    const handleUpdate = () => fetchOrCreatePass(true);
+    window.addEventListener('storage', handleUpdate);
+    window.addEventListener('gate_pass_updated', handleUpdate);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('gate_pass_channel');
+      bc.onmessage = () => fetchOrCreatePass(true);
+    } catch (e) {
+      // BroadcastChannel fallback
+    }
+
+    const channel = supabase
+      .channel(`public:gate_pass_modal_${student.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gate_passes' }, () => {
+        fetchOrCreatePass(true);
+      })
+      .subscribe();
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('gate_pass_updated', handleUpdate);
+      if (bc) bc.close();
+      supabase.removeChannel(channel);
     };
   }, [student.id, student.roll_no]);
 

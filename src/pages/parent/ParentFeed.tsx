@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Calendar, ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
+import { LogOut, Calendar, ChevronLeft, ChevronRight, StickyNote, CheckCircle2, ShieldCheck, UserCheck } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
-import { Student, DailyLog, MediaItem } from '@/lib/types';
+import { Student, Staff, DailyLog, MediaItem, GatePass } from '@/lib/types';
 import { getMealLabel, getMealEmoji, getNapLabel, getNapEmoji, getMoodLabel, getMoodEmoji } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
 import { FullScreenSpinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
-import { getMockLogs, getMockStudents } from '@/lib/mockData';
+import { getMockLogs, getMockStudents, getMockGatePasses, getMockStaff } from '@/lib/mockData';
 
 import { ParentGatePassModal } from './ParentGatePassModal';
 
@@ -22,10 +22,70 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showGatePass, setShowGatePass] = useState(false);
+  const [todayGatePass, setTodayGatePass] = useState<GatePass | null>(null);
 
   useEffect(() => {
     loadLogs(selectedDate);
-  }, [selectedDate]);
+    loadGatePassStatus(selectedDate);
+
+    const handleUpdate = () => {
+      loadGatePassStatus(selectedDate);
+      loadLogs(selectedDate);
+    };
+    window.addEventListener('gate_pass_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('gate_pass_channel');
+      bc.onmessage = () => handleUpdate();
+    } catch (e) {
+      // BroadcastChannel fallback
+    }
+
+    const channel = supabase
+      .channel(`public:parent_feed_${student.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gate_passes' }, () => {
+        handleUpdate();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_logs' }, () => {
+        handleUpdate();
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('gate_pass_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+      if (bc) bc.close();
+      supabase.removeChannel(channel);
+    };
+  }, [selectedDate, student.id, student.roll_no]);
+
+  const loadGatePassStatus = async (date: string) => {
+    try {
+      const { data } = await supabase
+        .from('gate_passes')
+        .select('*')
+        .or(`student_id.eq.${student.id},roll_no.eq.${student.roll_no}`)
+        .eq('pass_date', date)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setTodayGatePass(data[0] as GatePass);
+      } else {
+        const mockPass = getMockGatePasses().find(
+          (p) => (p.student_id === student.id || p.roll_no === student.roll_no) && p.pass_date === date
+        );
+        setTodayGatePass(mockPass || null);
+      }
+    } catch (err) {
+      const mockPass = getMockGatePasses().find(
+        (p) => (p.student_id === student.id || p.roll_no === student.roll_no) && p.pass_date === date
+      );
+      setTodayGatePass(mockPass || null);
+    }
+  };
 
   const loadLogs = async (date: string) => {
     setLoading(true);
@@ -135,8 +195,12 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
         {/* Student card header */}
         <div className="bg-gradient-to-br from-teal-500 to-emerald-500 rounded-3xl p-6 text-white shadow-xl shadow-teal-500/25 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl font-bold flex-shrink-0">
-              {student.name.charAt(0)}
+            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm overflow-hidden border-2 border-white/40 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+              {student.student_photo_url ? (
+                <img src={student.student_photo_url} alt={student.name} className="w-full h-full object-cover" />
+              ) : (
+                student.name.charAt(0)
+              )}
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold truncate">{student.name}</h1>
@@ -156,23 +220,51 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
           </button>
         </div>
 
-        {/* Digital Gate Pass Quick Banner */}
-        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-4 mb-6 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center text-xl font-bold shadow-md shadow-emerald-500/30 flex-shrink-0">
-              🎫
+        {/* Digital Gate Pass & Live Handover Entry Status Banner */}
+        <div className="mb-6 space-y-3">
+          {todayGatePass && todayGatePass.status === 'COMPLETED' ? (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl p-4 flex items-start justify-between shadow-sm animate-[fadeIn_0.3s_ease-out]">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center text-xl font-bold flex-shrink-0 shadow">
+                  <CheckCircle2 size={24} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 text-sm">Gate Pickup Scan Verified & Handed Over</h3>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    Picked up at{' '}
+                    <span className="font-bold">
+                      {new Date(todayGatePass.pickup_time || Date.now()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    </span>{' '}
+                    • Approved by <span className="font-semibold">{todayGatePass.approved_by_staff || 'Staff'}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGatePass(true)}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow hover:bg-emerald-700 transition-all flex-shrink-0"
+              >
+                View Pass
+              </button>
             </div>
-            <div>
-              <h3 className="font-bold text-gray-800 text-sm">Parent Digital Gate Pass</h3>
-              <p className="text-xs text-gray-500">Show QR Code to school gate staff for pickup</p>
+          ) : (
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center text-xl font-bold shadow-md shadow-emerald-500/30 flex-shrink-0">
+                  🎫
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 text-sm">Parent Digital Gate Pass</h3>
+                  <p className="text-xs text-gray-500">Show QR Code to school gate staff for pickup</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGatePass(true)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-95 flex-shrink-0"
+              >
+                Show Pass
+              </button>
             </div>
-          </div>
-          <button
-            onClick={() => setShowGatePass(true)}
-            className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-95 flex-shrink-0"
-          >
-            Show Pass
-          </button>
+          )}
         </div>
 
         {/* Date selector */}
@@ -268,6 +360,7 @@ function SummaryBadges({ log }: { log: DailyLog }) {
 
 function ActivityCard({ log, index }: { log: DailyLog; index: number }) {
   const time = new Date(log.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const staffMatch = getMockStaff().find((s: Staff) => s.name.toLowerCase() === (log.staff_name || '').toLowerCase());
 
   return (
     <div
@@ -276,9 +369,13 @@ function ActivityCard({ log, index }: { log: DailyLog; index: number }) {
     >
       {/* Card header */}
       <div className="flex items-center justify-between px-5 pt-4 pb-2">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-teal-400 to-emerald-400 flex items-center justify-center text-white text-xs font-bold">
-            {log.staff_name?.charAt(0) || 'T'}
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full overflow-hidden border border-teal-200 bg-gradient-to-br from-teal-400 to-emerald-400 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+            {staffMatch?.photo_url ? (
+              <img src={staffMatch.photo_url} alt={log.staff_name || 'Teacher'} className="w-full h-full object-cover" />
+            ) : (
+              log.staff_name?.charAt(0) || 'T'
+            )}
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-700">{log.staff_name || 'Teacher'}</p>

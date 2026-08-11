@@ -14,9 +14,17 @@ export function LandingPage() {
       {/* Header */}
       <header className="relative z-10 px-6 py-5 flex items-center justify-between max-w-6xl mx-auto w-full">
         <Logo />
-        <span className="text-xs font-semibold text-sky-600 bg-sky-100 px-3 py-1.5 rounded-full">
-          Preschool Daily Log
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/admin')}
+            className="text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-full border border-amber-300 transition-colors shadow-sm"
+          >
+            👑 Admin Portal
+          </button>
+          <span className="text-xs font-semibold text-sky-600 bg-sky-100 px-3 py-1.5 rounded-full hidden sm:inline-block">
+            Preschool Daily Log
+          </span>
+        </div>
       </header>
 
       {/* Hero */}
@@ -64,6 +72,22 @@ export function LandingPage() {
             </div>
             <h2 className="text-2xl font-bold text-white mb-1">Parent Portal</h2>
             <p className="text-teal-50 text-sm">View your child's daily report</p>
+          </button>
+        </div>
+
+        {/* Onboarding Quick Links */}
+        <div className="mt-6 flex flex-wrap gap-4 justify-center text-xs font-semibold">
+          <button
+            onClick={() => navigate('/onboarding/staff')}
+            className="px-3.5 py-2 rounded-xl bg-white border border-sky-200 text-sky-700 hover:bg-sky-50 transition-colors shadow-sm"
+          >
+            ➕ Teacher Onboarding & Photo Setup
+          </button>
+          <button
+            onClick={() => navigate('/onboarding/parent')}
+            className="px-3.5 py-2 rounded-xl bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 transition-colors shadow-sm"
+          >
+            👨‍👩‍👧 Parent & Child Onboarding
           </button>
         </div>
 

@@ -144,6 +144,10 @@ export function StaffQRScannerModal({ staff, onClose }: StaffQRScannerModalProps
           pin: String(studentData.pin || '1234'),
           name: studentData.name || 'Student',
           class_name: studentData.class_name || studentData.class || 'Nursery',
+          guardian_name: studentData.guardian_name,
+          parent_phone: studentData.parent_phone,
+          student_photo_url: studentData.student_photo_url,
+          parent_photo_url: studentData.parent_photo_url,
         };
       } else {
         targetStudent = getMockStudents().find((s) => s.roll_no === cleanRoll || s.id === cleanRoll) || null;
@@ -179,6 +183,8 @@ export function StaffQRScannerModal({ staff, onClose }: StaffQRScannerModalProps
           status: 'PENDING',
           pass_date: today,
           created_at: new Date().toISOString(),
+          student_photo_url: targetStudent.student_photo_url,
+          parent_photo_url: targetStudent.parent_photo_url,
         });
       }
     } catch (err) {
@@ -195,12 +201,14 @@ export function StaffQRScannerModal({ staff, onClose }: StaffQRScannerModalProps
     const nowIso = new Date().toISOString();
     const today = new Date().toISOString().split('T')[0];
 
-    // Always update local storage
+    // Always update local storage (never duplicate)
     completeMockGatePass(scannedResult.id || matchedStudent.roll_no, staff.name);
 
-    // Sync to Supabase
+    // Sync to Supabase — strict UPDATE first, INSERT only if no record exists
     try {
-      let existingId = scannedResult.id && !scannedResult.id.startsWith('pass-') ? scannedResult.id : undefined;
+      // Find the real DB id (prefer the scannedResult's id if it's a real UUID)
+      let existingId: string | undefined =
+        scannedResult.id && !scannedResult.id.startsWith('pass-') ? scannedResult.id : undefined;
 
       if (!existingId) {
         const { data: existingRows } = await supabase
@@ -216,44 +224,50 @@ export function StaffQRScannerModal({ staff, onClose }: StaffQRScannerModalProps
         }
       }
 
-      const payload: any = {
-        student_id: matchedStudent.id,
-        roll_no: matchedStudent.roll_no,
-        student_name: matchedStudent.name,
-        class_name: matchedStudent.class_name,
+      const updateFields = {
         status: 'COMPLETED',
         pickup_time: nowIso,
         approved_by_staff: staff.name,
-        pass_date: today,
+        student_photo_url: matchedStudent.student_photo_url,
+        parent_photo_url: matchedStudent.parent_photo_url,
       };
 
       if (existingId) {
-        payload.id = existingId;
-      }
-
-      const { error: updateErr } = await supabase
-        .from('gate_passes')
-        .upsert(payload);
-
-      if (updateErr) {
-        console.warn('[StaffQRScannerModal] Supabase gate_passes upsert error:', updateErr.message);
+        // Strict UPDATE — no new row created
+        const { error } = await supabase
+          .from('gate_passes')
+          .update(updateFields)
+          .eq('id', existingId);
+        if (error) console.warn('[StaffQRScannerModal] UPDATE error:', error.message);
+      } else {
+        // First scan of the day — INSERT a completed record
+        const { error } = await supabase.from('gate_passes').insert({
+          student_id: matchedStudent.id,
+          roll_no: matchedStudent.roll_no,
+          student_name: matchedStudent.name,
+          class_name: matchedStudent.class_name,
+          pass_date: today,
+          ...updateFields,
+        });
+        if (error) console.warn('[StaffQRScannerModal] INSERT error:', error.message);
       }
     } catch (err) {
       console.warn('[StaffQRScannerModal] Supabase sync exception');
     }
 
     setScannedResult((prev) =>
-      prev
-        ? {
-            ...prev,
-            status: 'COMPLETED',
-            pickup_time: nowIso,
-            approved_by_staff: staff.name,
-          }
-        : null
+      prev ? { ...prev, status: 'COMPLETED', pickup_time: nowIso, approved_by_staff: staff.name } : null
     );
 
-    showToast('success', `Handover approved for ${matchedStudent.name}!`);
+    try {
+      const bc = new BroadcastChannel('gate_pass_channel');
+      bc.postMessage({ type: 'GATE_PASS_UPDATED', student_id: matchedStudent.id, roll_no: matchedStudent.roll_no });
+      bc.close();
+    } catch (e) { /* fallback */ }
+
+    window.dispatchEvent(new Event('gate_pass_updated'));
+    window.dispatchEvent(new Event('storage'));
+    showToast('success', `✅ Handover approved for ${matchedStudent.name}!`);
     setProcessing(false);
   };
 
@@ -341,12 +355,52 @@ export function StaffQRScannerModal({ staff, onClose }: StaffQRScannerModalProps
                   </span>
                 </div>
                 <div className="flex items-center gap-4 pt-2">
-                  <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center font-bold text-2xl text-white border-2 border-white/40">
-                    {matchedStudent?.name.charAt(0)}
+                  <div className="w-16 h-16 rounded-2xl bg-white/20 overflow-hidden border-2 border-white/40 flex items-center justify-center font-bold text-2xl text-white flex-shrink-0">
+                    {matchedStudent?.student_photo_url ? (
+                      <img src={matchedStudent.student_photo_url} alt={matchedStudent.name} className="w-full h-full object-cover" />
+                    ) : (
+                      matchedStudent?.name.charAt(0)
+                    )}
                   </div>
                   <div>
                     <h3 className="font-bold text-xl leading-tight">{matchedStudent?.name}</h3>
                     <p className="text-sm text-sky-100 font-medium">Roll #{matchedStudent?.roll_no}</p>
+                    {matchedStudent?.guardian_name && (
+                      <p className="text-xs text-sky-100/90 mt-0.5">Parent: {matchedStudent.guardian_name}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Side-by-Side Handover Photo Identity Verification */}
+              <div className="bg-sky-50/80 border border-sky-100 rounded-2xl p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-sky-800 mb-3 flex items-center justify-between">
+                  <span>📸 Handover Identity Verification</span>
+                  <span className="text-[10px] bg-sky-200 text-sky-800 px-2 py-0.5 rounded-full">Required</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="bg-white p-2.5 rounded-xl border border-sky-100 shadow-sm flex flex-col items-center">
+                    <p className="text-[11px] font-bold text-gray-600 mb-1.5">Child Picture</p>
+                    <div className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 bg-gray-100 mb-1">
+                      {matchedStudent?.student_photo_url ? (
+                        <img src={matchedStudent.student_photo_url} alt="Child" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 font-bold text-xl">👶</div>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-700 truncate w-full">{matchedStudent?.name}</span>
+                  </div>
+
+                  <div className="bg-white p-2.5 rounded-xl border border-sky-100 shadow-sm flex flex-col items-center">
+                    <p className="text-[11px] font-bold text-gray-600 mb-1.5">Parent / Pickup Picture</p>
+                    <div className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 bg-gray-100 mb-1">
+                      {matchedStudent?.parent_photo_url ? (
+                        <img src={matchedStudent.parent_photo_url} alt="Parent" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 font-bold text-xl">👨‍👩‍👧</div>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-700 truncate w-full">{matchedStudent?.guardian_name || 'Authorized Parent'}</span>
                   </div>
                 </div>
               </div>
@@ -373,9 +427,9 @@ export function StaffQRScannerModal({ staff, onClose }: StaffQRScannerModalProps
                     <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3.5 flex items-start gap-3">
                       <ShieldCheck size={22} className="text-amber-600 flex-shrink-0 mt-0.5" />
                       <div>
-                        <h4 className="font-bold text-sm text-amber-900">Gate Pass Ready for Checkout</h4>
+                        <h4 className="font-bold text-sm text-amber-900">Gate Pass Active for Pickup</h4>
                         <p className="text-xs text-amber-700 mt-0.5">
-                          Confirm parent presence before approving handover.
+                          Verify parent photo matched before clicking handover approval.
                         </p>
                       </div>
                     </div>
