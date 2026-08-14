@@ -185,12 +185,14 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* Desktop Gate Pass button */}
             <button
               onClick={() => setShowGatePass(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white hover:from-teal-600 hover:to-emerald-700 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white hover:from-teal-600 hover:to-emerald-700 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
             >
               <span>🎫</span> Gate Pass
             </button>
+            {/* Unified Logout Button */}
             <button
               onClick={() => {
                 onLogout();
@@ -209,9 +211,9 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
 
       <main className="max-w-2xl mx-auto px-3.5 sm:px-6 py-4 sm:py-6">
         {/* Student card header */}
-        <div className="bg-gradient-to-br from-teal-500 to-emerald-500 rounded-3xl p-6 text-white shadow-xl shadow-teal-500/25 mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm overflow-hidden border-2 border-white/40 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+        <div className="bg-gradient-to-br from-teal-500 to-emerald-500 rounded-3xl p-5 sm:p-6 text-white shadow-xl shadow-teal-500/25 mb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/20 backdrop-blur-sm overflow-hidden border-2 border-white/40 flex items-center justify-center text-xl sm:text-2xl font-bold flex-shrink-0">
               {student.student_photo_url ? (
                 <img src={student.student_photo_url} alt={student.name} className="w-full h-full object-cover" />
               ) : (
@@ -219,18 +221,18 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold truncate">{student.name}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold truncate">{student.name}</h1>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-sm bg-white/20 backdrop-blur-sm px-2.5 py-0.5 rounded-full font-medium">
+                <span className="text-xs sm:text-sm bg-white/20 backdrop-blur-sm px-2.5 py-0.5 rounded-full font-medium">
                   {student.class_name}
                 </span>
-                <span className="text-sm text-teal-50">Roll #{student.roll_no}</span>
+                <span className="text-xs sm:text-sm text-teal-50">Roll #{student.roll_no}</span>
               </div>
             </div>
           </div>
           <button
             onClick={() => setShowGatePass(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white text-teal-700 hover:bg-teal-50 font-bold text-sm shadow-md transition-all active:scale-95 flex-shrink-0"
+            className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white text-teal-700 hover:bg-teal-50 font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 flex-shrink-0"
           >
             <span>🎫</span> Gate Pass
           </button>
