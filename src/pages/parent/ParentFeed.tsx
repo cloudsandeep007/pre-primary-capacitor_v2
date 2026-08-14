@@ -173,15 +173,21 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
     : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50/50 via-white to-white">
+    <div className="min-h-screen bg-gradient-to-b from-teal-50/50 via-white to-white overflow-x-hidden w-full">
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-lg border-b border-gray-100">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <Logo size="sm" />
-          <div className="flex items-center gap-2">
+      <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm">
+        <div className="max-w-2xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Logo size="sm" />
+            <span className="hidden sm:inline-flex items-center gap-1 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200/60 px-2.5 py-1 rounded-full">
+              👨‍👩‍👧 Parent Portal
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             <button
               onClick={() => setShowGatePass(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white hover:from-teal-600 hover:to-emerald-700 transition-all text-sm font-bold shadow-md shadow-teal-500/20 active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white hover:from-teal-600 hover:to-emerald-700 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
             >
               <span>🎫</span> Gate Pass
             </button>
@@ -190,16 +196,18 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
                 onLogout();
                 navigate('/');
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-gray-500 hover:text-rose-500 hover:bg-rose-50 transition-colors text-sm font-medium"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200/80 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
+              title="Sign Out"
+              aria-label="Sign out"
             >
-              <LogOut size={18} />
-              <span className="hidden sm:inline">Sign Out</span>
+              <LogOut size={14} />
+              <span>Logout</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
+      <main className="max-w-2xl mx-auto px-3.5 sm:px-6 py-4 sm:py-6">
         {/* Student card header */}
         <div className="bg-gradient-to-br from-teal-500 to-emerald-500 rounded-3xl p-6 text-white shadow-xl shadow-teal-500/25 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-4">

@@ -271,22 +271,30 @@ export function GateDashboard({ staff, onLogout }: GateDashboardProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-900 flex flex-col overflow-x-hidden w-full">
       {/* Header */}
-      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <div className="bg-white p-2 rounded-xl shadow-sm">
-           <Logo size="sm" />
+      <header className="bg-slate-800/95 backdrop-blur-md border-b border-slate-700 px-3.5 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="bg-white px-2 py-1 rounded-xl shadow-sm">
+            <Logo size="sm" />
+          </div>
+          <span className="hidden sm:inline-flex items-center gap-1 text-xs font-bold text-amber-300 bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-full">
+            🛡️ Gate Security
+          </span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <div className="text-right hidden sm:block">
-            <p className="text-slate-200 font-medium">{staff.name}</p>
-            <p className="text-amber-500 text-xs font-bold uppercase tracking-wider">Gate Security</p>
+            <p className="text-slate-200 font-bold text-xs leading-tight">{staff.name}</p>
+            <p className="text-amber-400 text-[10px] font-semibold uppercase tracking-wider">Gate Officer</p>
           </div>
           <button
             onClick={onLogout}
-            className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-xl transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 hover:text-rose-200 border border-rose-500/40 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
+            title="Sign Out"
+            aria-label="Sign out"
           >
-            <LogOut size={20} />
+            <LogOut size={14} />
+            <span>Logout</span>
           </button>
         </div>
       </header>

@@ -292,22 +292,28 @@ export function AdminDashboard() {
   const completedHandoversToday = gatePasses.filter((g) => g.pass_date === todayStr && g.status === 'COMPLETED').length;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
+    <div className="min-h-screen bg-slate-50 text-slate-800 overflow-x-hidden w-full">
       {/* Admin Top Header */}
-      <header className="sticky top-0 z-20 bg-slate-900 text-white shadow-md">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur-md text-white border-b border-slate-800 shadow-md">
+        <div className="max-w-6xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 flex-shrink-0">
             <Logo size="sm" />
-            <span className="hidden sm:inline-block bg-amber-500/20 text-amber-300 text-xs font-bold px-3 py-1 rounded-full border border-amber-500/30">
+            <span className="hidden sm:inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-500/30">
               👑 Admin Control Portal
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             <button
-              onClick={() => navigate('/')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+              onClick={() => {
+                setAdminAuthenticated(false);
+                navigate('/');
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 hover:text-rose-200 border border-rose-500/40 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
+              title="Sign Out of Admin Portal"
+              aria-label="Sign out"
             >
-              <ArrowLeft size={16} /> Home
+              <LogOut size={14} />
+              <span>Logout</span>
             </button>
           </div>
         </div>

@@ -229,70 +229,84 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
     <div className="min-h-screen bg-gray-50 overflow-x-hidden w-full">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm">
-        <div className="max-w-4xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
-          <div className="flex-shrink-0">
+        <div className="max-w-4xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Logo size="sm" />
+            <span className="hidden sm:inline-flex items-center gap-1 text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200/60 px-2.5 py-1 rounded-full">
+              👩‍🏫 Teacher Portal
+            </span>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
-            {isAdmin && (
-              <button
-                onClick={() => navigate('/admin')}
-                className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors text-xs font-bold border border-amber-200 flex items-center gap-1 shadow-sm"
-                title="Admin Portal"
-              >
-                <span>👑</span>
-                <span className="hidden sm:inline">Admin</span>
-              </button>
-            )}
-            <button
-              onClick={() => setShowGradebook(true)}
-              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs transition-colors shadow-sm"
-              title="Daily Gradebook"
-            >
-              <Activity size={15} />
-              <span className="hidden sm:inline">Gradebook</span>
-            </button>
-            <button
-              onClick={() => setShowScanner(true)}
-              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs sm:text-sm font-semibold border border-sky-200 shadow-sm"
-              title="Gate Pass QR Scanner"
-            >
-              <span>📷</span>
-              <span className="hidden sm:inline">Scanner</span>
-            </button>
-            <div className="text-right hidden md:block pl-1">
-              <p className="text-sm font-semibold text-gray-700 leading-tight">{staff.name}</p>
-              <p className="text-xs text-sky-600 font-medium bg-sky-50 px-2 py-0.5 rounded-md inline-block mt-0.5">
-                {assignedClass !== 'All' ? `${assignedClass} Teacher` : 'All Classes Staff'}
-              </p>
-            </div>
-            <div
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border border-sky-200 bg-gradient-to-br from-sky-400 to-teal-400 flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0 shadow-sm"
-              title={staff.name}
-            >
-              {staff.photo_url ? (
-                <img src={staff.photo_url} alt={staff.name} className="w-full h-full object-cover" />
-              ) : (
-                staff.name.charAt(0)
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* Desktop Quick Actions */}
+            <div className="hidden sm:flex items-center gap-2">
+              {isAdmin && (
+                <button
+                  onClick={() => navigate('/admin')}
+                  className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors text-xs font-bold border border-amber-200 flex items-center gap-1 shadow-sm"
+                  title="Admin Portal"
+                >
+                  <span>👑</span>
+                  <span>Admin</span>
+                </button>
               )}
+              <button
+                onClick={() => setShowGradebook(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs transition-colors shadow-sm"
+                title="Daily Gradebook"
+              >
+                <Activity size={14} />
+                <span>Gradebook</span>
+              </button>
+              <button
+                onClick={() => setShowScanner(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-semibold border border-sky-200 shadow-sm"
+                title="Gate Pass QR Scanner"
+              >
+                <span>📷</span>
+                <span>Gate Scanner</span>
+              </button>
             </div>
+
+            {/* Teacher Avatar & Info */}
+            <div className="flex items-center gap-2 pl-1 border-l border-gray-100 sm:border-transparent">
+              <div
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border border-sky-200 bg-gradient-to-br from-sky-400 to-teal-400 flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0 shadow-sm"
+                title={staff.name}
+              >
+                {staff.photo_url ? (
+                  <img src={staff.photo_url} alt={staff.name} className="w-full h-full object-cover" />
+                ) : (
+                  staff.name.charAt(0)
+                )}
+              </div>
+              <div className="text-left hidden md:block">
+                <p className="text-xs font-bold text-gray-700 leading-tight truncate max-w-[120px]">{staff.name}</p>
+                <p className="text-[10px] text-sky-600 font-semibold">
+                  {assignedClass !== 'All' ? `${assignedClass}` : 'All Classes'}
+                </p>
+              </div>
+            </div>
+
+            {/* Unified Logout Button */}
             <button
               onClick={() => {
                 onLogout();
                 navigate('/');
               }}
-              className="p-1.5 sm:p-2 rounded-xl text-gray-400 hover:text-rose-500 hover:bg-rose-50 transition-colors flex-shrink-0"
-              title="Sign out"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 border border-rose-200/80 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
+              title="Sign Out"
               aria-label="Sign out"
             >
-              <LogOut size={18} className="sm:w-5 sm:h-5" />
+              <LogOut size={14} />
+              <span>Logout</span>
             </button>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-3.5 sm:px-6 py-4 sm:py-6 w-full">
-        {/* Title */}
+        {/* Title & Mobile Teacher Info */}
         <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-tight">Teacher Dashboard</h1>
@@ -300,10 +314,34 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </div>
           <div className="flex md:hidden items-center gap-2 mt-1">
             <span className="text-xs font-semibold text-gray-700">{staff.name}</span>
-            <span className="text-[10px] sm:text-xs text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-full">
               {assignedClass !== 'All' ? `${assignedClass} Teacher` : 'All Classes'}
             </span>
           </div>
+        </div>
+
+        {/* Mobile Quick Action Buttons Bar */}
+        <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-1 no-scrollbar">
+          <button
+            onClick={() => setShowScanner(true)}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold text-xs border border-sky-200 shadow-sm whitespace-nowrap active:scale-95"
+          >
+            <span>📷</span> Gate Scanner
+          </button>
+          <button
+            onClick={() => setShowGradebook(true)}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 text-white font-bold text-xs shadow-sm whitespace-nowrap active:scale-95"
+          >
+            <Activity size={14} /> Gradebook
+          </button>
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/admin')}
+              className="flex items-center justify-center gap-1 px-3 py-2 rounded-xl bg-amber-50 text-amber-800 font-bold text-xs border border-amber-200 shadow-sm whitespace-nowrap active:scale-95"
+            >
+              <span>👑</span> Admin
+            </button>
+          )}
         </div>
 
         {/* Main Tab Navigation */}
