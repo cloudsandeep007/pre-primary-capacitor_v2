@@ -226,39 +226,50 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   const isAdmin = staff.role === 'admin' || staff.email === 'admin@school.com';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden w-full">
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-lg border-b border-gray-100">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-          <Logo size="sm" />
-          <div className="flex items-center gap-2 sm:gap-3">
+      <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm">
+        <div className="max-w-4xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
+          <div className="flex-shrink-0">
+            <Logo size="sm" />
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
             {isAdmin && (
               <button
                 onClick={() => navigate('/admin')}
-                className="px-3 py-2 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors text-xs font-bold border border-amber-200"
+                className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors text-xs font-bold border border-amber-200 flex items-center gap-1 shadow-sm"
+                title="Admin Portal"
               >
-                👑 Admin Portal
+                <span>👑</span>
+                <span className="hidden sm:inline">Admin</span>
               </button>
             )}
             <button
               onClick={() => setShowGradebook(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs transition-colors shadow-sm"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs transition-colors shadow-sm"
+              title="Daily Gradebook"
             >
-              <Activity size={16} /> Gradebook
+              <Activity size={15} />
+              <span className="hidden sm:inline">Gradebook</span>
             </button>
             <button
               onClick={() => setShowScanner(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-sm font-semibold border border-sky-200 shadow-sm"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs sm:text-sm font-semibold border border-sky-200 shadow-sm"
+              title="Gate Pass QR Scanner"
             >
-              <span>📷</span> Gate Scanner
+              <span>📷</span>
+              <span className="hidden sm:inline">Scanner</span>
             </button>
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-gray-700">{staff.name}</p>
-              <p className="text-xs text-sky-600 font-medium bg-sky-50 px-2 py-0.5 rounded-md inline-block">
+            <div className="text-right hidden md:block pl-1">
+              <p className="text-sm font-semibold text-gray-700 leading-tight">{staff.name}</p>
+              <p className="text-xs text-sky-600 font-medium bg-sky-50 px-2 py-0.5 rounded-md inline-block mt-0.5">
                 {assignedClass !== 'All' ? `${assignedClass} Teacher` : 'All Classes Staff'}
               </p>
             </div>
-            <div className="w-9 h-9 rounded-full overflow-hidden border border-sky-200 bg-gradient-to-br from-sky-400 to-teal-400 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+            <div
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border border-sky-200 bg-gradient-to-br from-sky-400 to-teal-400 flex items-center justify-center text-white font-bold text-xs sm:text-sm flex-shrink-0 shadow-sm"
+              title={staff.name}
+            >
               {staff.photo_url ? (
                 <img src={staff.photo_url} alt={staff.name} className="w-full h-full object-cover" />
               ) : (
@@ -270,29 +281,36 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                 onLogout();
                 navigate('/');
               }}
-              className="p-2 rounded-xl text-gray-400 hover:text-rose-500 hover:bg-rose-50 transition-colors"
+              className="p-1.5 sm:p-2 rounded-xl text-gray-400 hover:text-rose-500 hover:bg-rose-50 transition-colors flex-shrink-0"
               title="Sign out"
+              aria-label="Sign out"
             >
-              <LogOut size={20} />
+              <LogOut size={18} className="sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
+      <main className="max-w-4xl mx-auto px-3.5 sm:px-6 py-4 sm:py-6 w-full">
         {/* Title */}
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-1">Teacher Dashboard</h1>
-            <p className="text-gray-500 text-sm">Manage your class, post announcements & assign homework</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-tight">Teacher Dashboard</h1>
+            <p className="text-gray-500 text-xs sm:text-sm">Manage your class, post announcements & assign homework</p>
+          </div>
+          <div className="flex md:hidden items-center gap-2 mt-1">
+            <span className="text-xs font-semibold text-gray-700">{staff.name}</span>
+            <span className="text-[10px] sm:text-xs text-sky-700 font-bold bg-sky-100 px-2 py-0.5 rounded-full">
+              {assignedClass !== 'All' ? `${assignedClass} Teacher` : 'All Classes'}
+            </span>
           </div>
         </div>
 
         {/* Main Tab Navigation */}
-        <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+        <div className="flex gap-1.5 sm:gap-2 mb-5 overflow-x-auto pb-1.5 -mx-3.5 px-3.5 sm:mx-0 sm:px-0 no-scrollbar">
           <button
             onClick={() => setMainTab('class')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'class'
                 ? 'bg-gradient-to-r from-sky-500 to-teal-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-sky-300'
@@ -302,7 +320,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </button>
           <button
             onClick={() => setMainTab('announcements')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'announcements'
                 ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-violet-300'
@@ -312,7 +330,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </button>
           <button
             onClick={() => setMainTab('homework')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'homework'
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-amber-300'
@@ -322,7 +340,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </button>
           <button
             onClick={() => setMainTab('classwork')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'classwork'
                 ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-teal-300'
@@ -332,7 +350,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </button>
           <button
             onClick={() => setMainTab('attendance')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'attendance'
                 ? 'bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-sky-300'
@@ -342,7 +360,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </button>
           <button
             onClick={() => setMainTab('performance')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'performance'
                 ? 'bg-gradient-to-r from-teal-500 to-sky-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-teal-300'
@@ -352,7 +370,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
           </button>
           <button
             onClick={() => setMainTab('reports')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'reports'
                 ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md'
                 : 'bg-white text-gray-600 border border-gray-200 hover:border-rose-300'
@@ -396,10 +414,10 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
         {mainTab === 'class' && (
           <>
             {/* Activity Section Tabs */}
-            <div className="flex gap-2 mb-4">
+            <div className="grid grid-cols-2 gap-2 mb-4">
               <button
                 onClick={() => setActivitySection('gate')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
                   activitySection === 'gate'
                     ? 'bg-gradient-to-r from-sky-500 to-teal-500 text-white shadow-md'
                     : 'bg-white text-gray-600 border border-gray-200 hover:border-sky-300'
@@ -409,7 +427,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
               </button>
               <button
                 onClick={() => setActivitySection('classroom')}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
                   activitySection === 'classroom'
                     ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md'
                     : 'bg-white text-gray-600 border border-gray-200 hover:border-violet-300'
@@ -421,19 +439,19 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
 
             {/* Gate Pass Status — ALL students roster */}
             {activitySection === 'gate' && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-6 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
+              <div className="bg-white rounded-2xl border border-gray-100 p-3.5 sm:p-4 mb-5 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 pb-2 border-b border-gray-100">
                   <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Today's Class Attendance & Gate Pass Status
+                    Today's Attendance & Gate Pass Status
                   </h2>
-                  <div className="flex items-center gap-3 text-[10px] font-semibold text-gray-500">
+                  <div className="flex items-center gap-2.5 text-[10px] font-semibold text-gray-500 flex-wrap">
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-400" />In Class</span>
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" />Pass Active</span>
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" />Handed Over</span>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-2.5">
                   {filteredStudents.map((student) => {
                     const pass = todayScans.find(
                       (p) => p.roll_no === student.roll_no || p.student_id === student.id
@@ -447,13 +465,13 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                     return (
                       <div
                         key={student.id}
-                        className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
+                        className={`p-2.5 sm:p-3 rounded-xl border flex items-center justify-between gap-2 text-xs min-w-0 ${
                           status === 'handedover' ? 'bg-emerald-50/70 border-emerald-200/80'
                           : status === 'active' ? 'bg-amber-50/70 border-amber-200/80'
                           : 'bg-sky-50/50 border-sky-100'
                         }`}
                       >
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
                           <div className="w-9 h-9 rounded-xl bg-white overflow-hidden border border-gray-200 flex items-center justify-center font-bold text-sm flex-shrink-0">
                             {student.student_photo_url ? (
                               <img src={student.student_photo_url} alt={student.name} className="w-full h-full object-cover" />
@@ -461,28 +479,28 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                               <span className="text-gray-500">{student.name.charAt(0)}</span>
                             )}
                           </div>
-                          <div>
-                            <p className="font-bold text-sm leading-tight text-gray-800">{student.name}</p>
-                            <p className="text-[11px] text-gray-500">Roll #{student.roll_no} • {student.class_name}</p>
-                            {hasLog && <p className="text-[10px] text-violet-600 font-semibold mt-0.5">✏️ Activity logged today</p>}
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-xs sm:text-sm leading-tight text-gray-800 truncate">{student.name}</p>
+                            <p className="text-[10px] sm:text-[11px] text-gray-500 truncate">Roll #{student.roll_no} • {student.class_name}</p>
+                            {hasLog && <p className="text-[9px] sm:text-[10px] text-violet-600 font-semibold mt-0.5 truncate">✏️ Activity logged today</p>}
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           {status === 'handedover' ? (
-                            <span className="inline-flex items-center gap-1 font-bold text-[11px] text-emerald-700">
-                              <CheckCircle2 size={13} /> Handed Over
+                            <span className="inline-flex items-center gap-1 font-bold text-[10px] sm:text-[11px] text-emerald-700">
+                              <CheckCircle2 size={12} /> Handed Over
                             </span>
                           ) : status === 'active' ? (
-                            <span className="inline-flex items-center gap-1 font-bold text-[11px] text-amber-700">
-                              <Clock size={13} /> Pass Active
+                            <span className="inline-flex items-center gap-1 font-bold text-[10px] sm:text-[11px] text-amber-700">
+                              <Clock size={12} /> Pass Active
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 font-bold text-[11px] text-sky-700">
-                              <Users size={13} /> In Class
+                            <span className="inline-flex items-center gap-1 font-bold text-[10px] sm:text-[11px] text-sky-700">
+                              <Users size={12} /> In Class
                             </span>
                           )}
                           {pass?.pickup_time && (
-                            <p className="text-[10px] text-gray-400 font-medium">
+                            <p className="text-[9px] sm:text-[10px] text-gray-400 font-medium">
                               {new Date(pass.pickup_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                             </p>
                           )}
@@ -491,7 +509,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                     );
                   })}
                   {filteredStudents.length === 0 && (
-                    <div className="col-span-2 text-center text-xs text-gray-400 py-6 bg-slate-50 rounded-xl">
+                    <div className="col-span-1 sm:col-span-2 text-center text-xs text-gray-400 py-6 bg-slate-50 rounded-xl">
                       No students in this class yet.
                     </div>
                   )}
@@ -501,8 +519,8 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
 
             {/* Classroom Activity Block */}
             {activitySection === 'classroom' && (
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-6 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
+              <div className="bg-white rounded-2xl border border-gray-100 p-3.5 sm:p-4 mb-5 shadow-sm">
+                <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                   <h2 className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-2">
                     <Activity size={14} className="text-violet-500" />
                     Today's Classroom Activity Log
@@ -512,17 +530,17 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                   <div className="bg-slate-50 rounded-xl p-6 text-center text-xs text-gray-400">
                     <BookOpen size={28} className="mx-auto mb-2 text-gray-200" />
                     <p className="font-semibold">No classroom activities logged yet today.</p>
-                    <p className="mt-1">Log an activity for any student using the Log button in the Student List below.</p>
+                    <p className="mt-1 text-[11px]">Log an activity for any student using the Log button in the Student List below.</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {todayLogs.map((log) => {
                       const student = filteredStudents.find(
                         (s) => s.id === log.student_id || s.roll_no === log.student_id
                       );
                       return (
-                        <div key={log.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="w-9 h-9 rounded-xl overflow-hidden border border-violet-200 bg-violet-100 flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        <div key={log.id} className="flex items-start gap-2.5 sm:gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden border border-violet-200 bg-violet-100 flex items-center justify-center font-bold text-xs sm:text-sm flex-shrink-0">
                             {student?.student_photo_url ? (
                               <img src={student.student_photo_url} alt={student.name} className="w-full h-full object-cover" />
                             ) : (
@@ -530,22 +548,22 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold text-gray-800">{student?.name || 'Student'}</p>
-                              <p className="text-[10px] text-gray-400">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-xs font-bold text-gray-800 truncate">{student?.name || 'Student'}</p>
+                              <p className="text-[10px] text-gray-400 flex-shrink-0">
                                 {new Date(log.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                               </p>
                             </div>
                             <p className="text-[10px] text-gray-500 mb-1">by {log.staff_name || 'Teacher'}</p>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-1">
                               {log.meal_status && (
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">🍱 {log.meal_status}</span>
+                                <span className="text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">🍱 {log.meal_status}</span>
                               )}
                               {log.nap_time && (
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">😴 {log.nap_time}</span>
+                                <span className="text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">😴 {log.nap_time}</span>
                               )}
                               {log.mood && (
-                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">😊 {log.mood}</span>
+                                <span className="text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">😊 {log.mood}</span>
                               )}
                             </div>
                             {log.teacher_notes && (
@@ -568,55 +586,55 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search by name or roll number..."
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 bg-white focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition-all text-sm"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 rounded-xl border border-gray-200 bg-white focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition-all text-xs sm:text-sm"
               />
             </div>
 
             {/* Class filter tabs (Admins) vs Class Banner (Assigned Teachers) */}
             {assignedClass === 'All' ? (
-              <div className="flex gap-2 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
+              <div className="flex gap-2 mb-5 overflow-x-auto pb-1 -mx-3.5 px-3.5 sm:mx-0 sm:px-0 no-scrollbar">
                 {visibleClassTabs.map((cls) => (
                   <button
                     key={cls}
                     onClick={() => setSelectedClass(cls)}
-                    className={`flex-shrink-0 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                    className={`flex-shrink-0 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-semibold text-xs sm:text-sm transition-all ${
                       selectedClass === cls
                         ? 'bg-gradient-to-r from-sky-500 to-teal-500 text-white shadow-md shadow-sky-500/20'
                         : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-300'
                     }`}
                   >
                     {cls}
-                    <span className={`ml-2 text-xs ${selectedClass === cls ? 'text-white/80' : 'text-gray-400'}`}>
+                    <span className={`ml-2 text-[10px] sm:text-xs ${selectedClass === cls ? 'text-white/80' : 'text-gray-400'}`}>
                       {classCounts[cls] || 0}
                     </span>
                   </button>
                 ))}
               </div>
             ) : (
-              <div className="mb-6 flex items-center justify-between bg-sky-50/80 border border-sky-100 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-sky-800">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-2 bg-sky-50/80 border border-sky-100 rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-semibold text-sky-800">
                     Assigned Class: <span className="font-bold">{assignedClass}</span>
                   </span>
-                  <span className="text-xs font-bold bg-sky-500 text-white px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] sm:text-xs font-bold bg-sky-500 text-white px-2 py-0.5 rounded-full">
                     {allowedStudents.length} {allowedStudents.length === 1 ? 'Student' : 'Students'}
                   </span>
                 </div>
-                <span className="text-xs text-sky-600 font-medium">Class Teacher View</span>
+                <span className="text-[11px] sm:text-xs text-sky-600 font-medium">Class Teacher View</span>
               </div>
             )}
 
             {/* Student list */}
             {filteredStudents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-                  <Users size={28} className="text-gray-300" />
+              <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-center">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-3 sm:mb-4">
+                  <Users size={26} className="text-gray-300" />
                 </div>
-                <p className="text-gray-500 font-medium">No students found</p>
-                <p className="text-gray-400 text-sm">Try adjusting your search or filter</p>
+                <p className="text-gray-500 font-semibold text-sm">No students found</p>
+                <p className="text-gray-400 text-xs mt-0.5">Try adjusting your search or filter</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                 {filteredStudents.map((student) => (
                   <StudentCard
                     key={student.id}
@@ -693,37 +711,37 @@ function StudentCard({
   };
 
   return (
-    <div className="group bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3.5 hover:border-sky-200 hover:shadow-lg hover:shadow-sky-100/50 transition-all duration-200">
-      <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden border border-sky-200 bg-gradient-to-br from-sky-400 to-teal-400 flex items-center justify-center text-white font-bold text-lg">
-        {student.student_photo_url ? (
-          <img src={student.student_photo_url} alt={student.name} className="w-full h-full object-cover" />
-        ) : (
-          student.name.charAt(0)
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <h3 className="font-semibold text-gray-800 truncate text-sm sm:text-base">{student.name}</h3>
+    <div className="group bg-white rounded-2xl border border-gray-100 p-3 sm:p-4 flex items-center justify-between gap-2.5 sm:gap-3.5 hover:border-sky-200 hover:shadow-lg hover:shadow-sky-100/50 transition-all duration-200 min-w-0">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+        <div className="flex-shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden border border-sky-200 bg-gradient-to-br from-sky-400 to-teal-400 flex items-center justify-center text-white font-bold text-base sm:text-lg">
+          {student.student_photo_url ? (
+            <img src={student.student_photo_url} alt={student.name} className="w-full h-full object-cover" />
+          ) : (
+            student.name.charAt(0)
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${classColors[student.class_name]}`}>
-            {student.class_name}
-          </span>
-          <span className="text-xs text-gray-400">Roll #{student.roll_no}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-bold text-gray-800 truncate text-sm sm:text-base leading-tight mb-1">{student.name}</h3>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full ${classColors[student.class_name] || 'bg-gray-100 text-gray-700'}`}>
+              {student.class_name}
+            </span>
+            <span className="text-[10px] sm:text-[11px] text-gray-400 font-medium">Roll #{student.roll_no}</span>
+          </div>
         </div>
       </div>
       <div className="flex flex-col gap-1.5 flex-shrink-0">
         <button
           onClick={onLogActivity}
-          className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-teal-500 text-white text-xs font-bold shadow-sm hover:shadow-md transition-all active:scale-95"
+          className="flex items-center justify-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-teal-500 text-white text-xs font-bold shadow-sm hover:shadow-md transition-all active:scale-95"
         >
-          <Camera size={14} /> Log
+          <Camera size={13} /> <span>Log</span>
         </button>
         <button
           onClick={onViewHistory}
-          className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-semibold border border-sky-200 transition-all"
+          className="flex items-center justify-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-semibold border border-sky-200 transition-all active:scale-95"
         >
-          <span>👁️</span> Feed
+          <span>👁️</span> <span>Feed</span>
         </button>
       </div>
     </div>
