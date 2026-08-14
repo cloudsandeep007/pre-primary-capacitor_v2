@@ -30,11 +30,16 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
     try {
       let staffAccount: Staff | null = null;
       try {
-        const { data, error } = await supabase
+        const timeout = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 3000)
+        );
+        const query = supabase
           .from('staff')
           .select('*')
           .eq('email', email.trim().toLowerCase())
           .maybeSingle();
+
+        const { data, error } = await Promise.race([query, timeout]) as Awaited<typeof query>;
 
         if (!error && data) {
           staffAccount = {
@@ -43,10 +48,11 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
             password: data.password || data.password_hash || '',
             name: data.name || data.email.split('@')[0],
             assigned_class: data.assigned_class || data.class_name || data.class || 'All',
+            role: data.role || 'staff',
           };
         }
       } catch (err) {
-        console.warn('[StaffLogin] Supabase unavailable, falling back to local demo data');
+        console.warn('[StaffLogin] Supabase unavailable or timed out, using demo data');
       }
 
       if (!staffAccount) {
@@ -98,7 +104,7 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-sky-500 to-sky-600 shadow-lg shadow-sky-500/30 mb-4">
               <LogIn size={28} className="text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-1">Staff Sign In</h1>
+            <h1 className="text-2xl font-bold text-gray-800 mb-1">Teacher Sign In</h1>
             <p className="text-gray-500 text-sm">Log in to manage your class activities</p>
           </div>
 
@@ -155,7 +161,7 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
                 onClick={() => { setEmail('teacher@school.com'); setPassword('teacher123'); }}
                 className="p-2 rounded-xl bg-white border border-sky-100 hover:bg-sky-100/50 text-gray-700 text-left font-medium transition-colors"
               >
-                👶 <span className="font-semibold text-sky-700">Nursery</span><br/>
+                👶 <span className="font-semibold text-sky-700">Nursery</span><br />
                 <span className="text-[10px] text-gray-500">teacher@school.com</span>
               </button>
               <button
@@ -163,7 +169,7 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
                 onClick={() => { setEmail('lkg@school.com'); setPassword('teacher123'); }}
                 className="p-2 rounded-xl bg-white border border-sky-100 hover:bg-sky-100/50 text-gray-700 text-left font-medium transition-colors"
               >
-                🎨 <span className="font-semibold text-teal-700">Junior KG</span><br/>
+                🎨 <span className="font-semibold text-teal-700">Junior KG</span><br />
                 <span className="text-[10px] text-gray-500">lkg@school.com</span>
               </button>
               <button
@@ -171,7 +177,7 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
                 onClick={() => { setEmail('ukg@school.com'); setPassword('teacher123'); }}
                 className="p-2 rounded-xl bg-white border border-sky-100 hover:bg-sky-100/50 text-gray-700 text-left font-medium transition-colors"
               >
-                ✏️ <span className="font-semibold text-indigo-700">Senior KG</span><br/>
+                ✏️ <span className="font-semibold text-indigo-700">Senior KG</span><br />
                 <span className="text-[10px] text-gray-500">ukg@school.com</span>
               </button>
               <button
@@ -179,7 +185,7 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
                 onClick={() => { setEmail('admin@school.com'); setPassword('admin123'); }}
                 className="p-2 rounded-xl bg-white border border-sky-100 hover:bg-sky-100/50 text-gray-700 text-left font-medium transition-colors"
               >
-                ⭐ <span className="font-semibold text-amber-700">All Classes</span><br/>
+                ⭐ <span className="font-semibold text-amber-700">All Classes</span><br />
                 <span className="text-[10px] text-gray-500">admin@school.com</span>
               </button>
             </div>

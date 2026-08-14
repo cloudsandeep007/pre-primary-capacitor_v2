@@ -11,7 +11,63 @@ export interface Staff {
   name: string;
   assigned_class?: ClassLevel | 'All';
   photo_url?: string;
-  role?: 'staff' | 'admin';
+  role?: 'staff' | 'admin' | 'gate_staff';
+}
+
+export interface Announcement {
+  id: string;
+  class_name: string;
+  staff_name: string | null;
+  staff_id: string | null;
+  title: string;
+  body: string | null;
+  image_url: string | null;
+  created_at: string;
+  replies?: AnnouncementReply[];
+}
+
+export interface AnnouncementReply {
+  id: string;
+  announcement_id: string;
+  sender_type: 'parent' | 'teacher';
+  sender_name: string | null;
+  student_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface HomeworkItem {
+  id: string;
+  class_name: string;
+  staff_name: string | null;
+  staff_id: string | null;
+  title: string;
+  subject: string | null;
+  description: string | null;
+  due_date: string | null;
+  attachment_url: string | null;
+  created_at: string;
+  replies?: HomeworkReply[];
+}
+
+export interface HomeworkReply {
+  id: string;
+  homework_id: string;
+  sender_type: 'parent' | 'teacher';
+  sender_name: string | null;
+  student_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface SchoolEvent {
+  id: string;
+  title: string;
+  event_date: string;
+  event_type: 'holiday' | 'event' | 'exam' | 'activity';
+  description: string | null;
+  class_name: string;
+  created_at: string;
 }
 
 export interface Student {
@@ -71,4 +127,20 @@ export interface GatePass {
   created_at: string;
   student_photo_url?: string | null;
   parent_photo_url?: string | null;
+}
+
+export interface Attendance {
+  id: string;
+  student_id: string;
+  status: 'present' | 'absent' | 'late';
+  date: string;
+}
+
+export interface DailyGrade {
+  id: string;
+  student_id: string;
+  cw_stars: number;
+  hw_stars: number;
+  activity_stars: number;
+  date: string;
 }

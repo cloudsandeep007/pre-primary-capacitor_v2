@@ -1,5 +1,5 @@
-// Samsidh School PWA Service Worker — v2 (Production)
-const CACHE_VERSION = 'samsidh-v2';
+// Samsidh School PWA Service Worker — v3 (Production)
+const CACHE_VERSION = 'samsidh-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 

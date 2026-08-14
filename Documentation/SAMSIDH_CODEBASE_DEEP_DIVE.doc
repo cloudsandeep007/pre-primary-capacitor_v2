@@ -1,0 +1,121 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Samsidh Codebase Deep Dive</title>
+<style>
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; padding: 20px; line-height: 1.6; }
+  h1 { color: #2c3e50; font-size: 26pt; border-bottom: 3px solid #16a085; padding-bottom: 10px; margin-bottom: 30px; }
+  h2 { color: #16a085; font-size: 18pt; margin-top: 40px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+  h3 { color: #2980b9; font-size: 14pt; margin-top: 25px; }
+  p { font-size: 11pt; color: #333; }
+  ul { font-size: 11pt; color: #333; }
+  li { margin-bottom: 10px; }
+  .code { font-family: 'Courier New', Courier, monospace; background-color: #272822; color: #f8f8f2; padding: 15px; border-radius: 5px; border: 1px solid #111; white-space: pre-wrap; font-size: 10pt; }
+  .note { background-color: #e8f8f5; border-left: 5px solid #1abc9c; padding: 15px; margin: 20px 0; font-style: italic; }
+  .box { background-color: #fdfdfd; border: 1px solid #eee; padding: 20px; border-radius: 5px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+</style>
+</head>
+<body>
+
+<h1>SAMSIDH CODEBASE DEEP DIVE: THE ULTIMATE PROGRAMMER'S MANUAL</h1>
+<p>This document is the absolute ground-truth technical manual for a developer entering the Samsidh codebase. It explains not just <em>what</em> the application does, but exactly <em>how</em> it is written, including the exact React hooks used, the exact Supabase SQL queries executed under the hood, and the precise state shapes.</p>
+
+<h2>1. REACT STATE & PORTAL ROUTING ENGINE</h2>
+<div class="box">
+  <p><strong>Files:</strong> <code>App.tsx</code>, <code>main.tsx</code>, <code>lib/router.tsx</code></p>
+  <p>The app avoids <code>react-router-dom</code> to reduce bundle size. Instead, it uses a custom hash-based routing engine.</p>
+  <ul>
+    <li><strong>Hook Usage:</strong> <code>App.tsx</code> uses <code>const [currentPath, setCurrentPath] = useState(window.location.hash)</code>.</li>
+    <li><strong>Event Listener:</strong> Inside a <code>useEffect</code>, it attaches <code>window.addEventListener('hashchange', () => setCurrentPath(window.location.hash))</code>.</li>
+    <li><strong>Conditional Rendering:</strong> A simple <code>switch</code> statement reads <code>currentPath</code>. If it is <code>#/staff</code>, it returns <code>&lt;StaffPortal /&gt;</code>.</li>
+    <li><strong>Error Boundary:</strong> <code>main.tsx</code> wraps <code>&lt;App /&gt;</code> in <code>&lt;ErrorBoundary /&gt;</code>. It uses the React lifecycle method <code>componentDidCatch(error, errorInfo)</code> to log the stack trace to the console and <code>static getDerivedStateFromError()</code> to flip a <code>hasError</code> boolean state to true.</li>
+  </ul>
+</div>
+
+<h2>2. THE SUPABASE CLIENT LAYER</h2>
+<div class="box">
+  <p><strong>Files:</strong> <code>lib/supabase.ts</code>, <code>lib/types.ts</code></p>
+  <ul>
+    <li><strong>Initialization:</strong> <code>supabase.ts</code> uses <code>@supabase/supabase-js</code>. It exports a singleton instance: <code>export const supabase = createClient(URL, KEY)</code>.</li>
+    <li><strong>TypeScript Enforcement:</strong> <code>types.ts</code> provides strictly typed interfaces (e.g., <code>export interface Log { id: string; student_id: string; ... }</code>). Every component casts the response to these types (e.g., <code>data as Log[]</code>).</li>
+  </ul>
+</div>
+
+<h2>3. PARENT PORTAL ARCHITECTURE</h2>
+<div class="box">
+  <h3>3.1 Authentication (<code>ParentLogin.tsx</code>)</h3>
+  <p>When the <code>&lt;form onSubmit={handleLogin}&gt;</code> fires, it calls <code>e.preventDefault()</code> and runs:</p>
+  <div class="code">
+const { data } = await supabase
+  .from('students')
+  .select('*')
+  .eq('guardian_phone', phone)
+  .eq('guardian_email', email)
+  </div>
+  <p>If <code>data.length > 0</code>, it calls <code>localStorage.setItem('samsidh_parent', JSON.stringify(data[0]))</code> and triggers the <code>onLogin</code> prop callback.</p>
+
+  <h3>3.2 Two-Way Chat Sync (<code>MessagesTab.tsx</code>)</h3>
+  <p>To avoid the N+1 query problem, <code>fetchRepliesAll</code> collects all <code>announcement_id</code>s currently in state and uses the <code>.in('announcement_id', ids)</code> modifier to fetch all related replies in a single network request.</p>
+  <div class="code">
+useEffect(() => {
+  const intervalId = setInterval(() => {
+    fetchAnnouncements();
+    fetchRepliesAll();
+  }, 5000);
+  return () => clearInterval(intervalId); // Cleanup
+}, [student.class_name]);
+  </div>
+</div>
+
+<h2>4. STAFF PORTAL ARCHITECTURE</h2>
+<div class="box">
+  <h3>4.1 Dashboard & Student Grid (<code>StaffDashboard.tsx</code>)</h3>
+  <p>Fetches all students where <code>.eq('class_name', staff.assigned_class)</code>.</p>
+  <p>To update the UI when a teacher logs an activity in a modal, it listens for a custom DOM event rather than using Redux:</p>
+  <div class="code">
+useEffect(() => {
+  const handleLogAdded = () => fetchStudents(); 
+  window.addEventListener('log_added', handleLogAdded);
+  return () => window.removeEventListener('log_added', handleLogAdded);
+}, []);
+  </div>
+
+  <h3>4.2 Optimistic Form Submission (<code>ActivityFormModal.tsx</code>)</h3>
+  <p>To prevent the app from freezing on bad Wi-Fi, the submit function wraps the Supabase call in a <code>Promise.race</code>:</p>
+  <div class="code">
+const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+await Promise.race([
+  supabase.from('logs').insert({ student_id: student.id, type, description }),
+  timeout
+]);
+  </div>
+  <p>If the timeout wins, the catch block generates a mock <code>Log</code> object and relies on local state.</p>
+</div>
+
+<h2>5. GATE STAFF & CRYPTOGRAPHY ARCHITECTURE</h2>
+<div class="box">
+  <h3>5.1 QR Code Generation (<code>ParentGatePassModal.tsx</code>)</h3>
+  <p>Generates a new <code>gate_passes</code> row with <code>status: 'PENDING'</code>.</p>
+  <div class="code">
+&lt;QRCodeCanvas value={JSON.stringify({ pass_id: id, student_id: student.id })} size={256} /&gt;
+  </div>
+  <p>This component utilizes the HTML5 <code>&lt;canvas&gt;</code> API to draw a high-density 2D barcode.</p>
+
+  <h3>5.2 Video Frame Parsing (<code>GateDashboard.tsx</code>)</h3>
+  <p>A <code>useEffect</code> hook instantiates the scanner when the modal opens:</p>
+  <div class="code">
+const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
+scanner.render(onScanSuccess, onScanFailure);
+  </div>
+  <p><code>onScanSuccess</code> receives raw string text. <code>JSON.parse(decodedText)</code> extracts <code>pass_id</code> and <code>student_id</code>.</p>
+</div>
+
+<h2>6. CSS & TAILWIND STYLING PATTERNS</h2>
+<div class="box">
+  <p>The app heavily relies on ES6 template literals to apply conditional Tailwind classes based on state. <em>Example in Chat:</em></p>
+  <div class="code">
+className={`p-3 rounded-xl ${reply.sender_type === 'teacher' ? 'bg-violet-100 ml-auto' : 'bg-white border'}`}
+  </div>
+  <p>This logic forces teacher replies to the right (<code>ml-auto</code> pushes the flex item to the right edge) with a violet background, while parent replies stay on the left with a white background.</p>
+</div>
+
+</body>
+</html>

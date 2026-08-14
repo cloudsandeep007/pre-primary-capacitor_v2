@@ -1,0 +1,135 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Samsidh Technical Manual</title>
+<style>
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; padding: 20px; line-height: 1.6; }
+  h1 { color: #2c3e50; font-size: 26pt; border-bottom: 3px solid #e74c3c; padding-bottom: 10px; margin-bottom: 30px; }
+  h2 { color: #c0392b; font-size: 18pt; margin-top: 40px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+  h3 { color: #2980b9; font-size: 14pt; margin-top: 25px; }
+  p { font-size: 11pt; color: #333; }
+  ul { font-size: 11pt; color: #333; }
+  li { margin-bottom: 10px; }
+  .code { font-family: 'Courier New', Courier, monospace; background-color: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #ddd; white-space: pre; }
+  .note { background-color: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; margin: 20px 0; font-style: italic; }
+  .box { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<h1>SAMSIDH PRESCHOOL APP: COMPREHENSIVE TECHNICAL MANUAL</h1>
+<p>This manual provides an exhaustive, granular breakdown of the entire Samsidh Preschool Application. It is written specifically for maintainers, administrators, and non-coders who need to confidently understand the "in and out" of the system, what every file does, and how the different sections communicate.</p>
+
+<h2>1. SYSTEM ARCHITECTURE OVERVIEW</h2>
+<p>The application is built using a modern "JAMstack" architecture. This means there is no traditional server running 24/7 to render web pages. Instead:</p>
+<ul>
+  <li><strong>Frontend (The App):</strong> Built using React and Vite. The app is downloaded once to the user's browser or phone, and then it runs entirely locally.</li>
+  <li><strong>Backend (The Database):</strong> Handled entirely by <strong>Supabase</strong>. Supabase acts as the database (PostgreSQL), the authentication provider (handling logins), and the API layer (allowing the app to read and write data securely).</li>
+  <li><strong>PWA (Progressive Web App):</strong> The app includes a Service Worker (<code>sw.js</code>). This is a background script that allows the app to be installed on a mobile phone's home screen and caches files so the app loads instantly even on slow networks.</li>
+</ul>
+
+<h2>2. DIRECTORY STRUCTURE BLUEPRINT</h2>
+<p>The source code (<code>src/</code>) is strictly organized by responsibility. Here is the high-level tree:</p>
+<div class="code">
+pre-primary/
+├── public/                 # Static assets (icons, logos, manifest for PWA)
+├── src/                    # All application code
+│   ├── components/         # Reusable UI parts (Buttons, Spinners, Modals)
+│   ├── lib/                # Brain of the app (Database connection, Types, Routing)
+│   ├── pages/              # The actual screens the user sees
+│   │   ├── admin/          # Admin screens
+│   │   ├── gate/           # Security Guard screens
+│   │   ├── parent/         # Parent screens
+│   │   └── staff/          # Teacher screens
+│   ├── App.tsx             # The master container
+│   ├── main.tsx            # The bootloader
+│   └── index.css           # Global styling and colors
+</div>
+
+<h2>3. GLOBAL & CONFIGURATION FILES</h2>
+<div class="box">
+  <h3><code>src/main.tsx</code></h3>
+  <p><strong>Responsibility:</strong> The "Bootloader". This is the very first file that executes when the app opens.</p>
+  <p><strong>How it works:</strong> It finds the HTML root and injects the entire React application (<code>App.tsx</code>) into it.</p>
+
+  <h3><code>src/App.tsx</code></h3>
+  <p><strong>Responsibility:</strong> The "Traffic Cop" and "Safety Net".</p>
+  <p><strong>How it works:</strong> It uses a custom Router to look at the URL and decides which Portal to show. It wraps the entire app in an ErrorBoundary to prevent hard crashes.</p>
+
+  <h3><code>src/index.css</code></h3>
+  <p><strong>Responsibility:</strong> The "Paintbrush".</p>
+  <p><strong>How it works:</strong> It loads TailwindCSS, dictating all colors, spacing, and fonts across the application.</p>
+</div>
+
+<h2>4. LIBRARY & UTILITY FILES (<code>src/lib</code>)</h2>
+<p>These files do not display anything on the screen. They are the invisible gears turning behind the scenes.</p>
+<ul>
+  <li><strong><code>supabase.ts</code>:</strong> The "Database Telephone". Holds the unique keys to talk to Supabase. Every file imports this to save/read data.</li>
+  <li><strong><code>types.ts</code>:</strong> The "Dictionary". Defines the exact shape of your data (e.g., a Student MUST have a name and class_name). Prevents typos and bugs.</li>
+  <li><strong><code>mockData.ts</code>:</strong> The "Backup Generator". Contains hardcoded fake data so the app can still be viewed and tested if the internet fails.</li>
+  <li><strong><code>router.tsx</code>:</strong> The "Navigator". Swaps out screens instantly based on the web address without reloading the page.</li>
+</ul>
+
+<h2>5. REUSABLE COMPONENTS (<code>src/components</code>)</h2>
+<p>These are the "Lego blocks" of the application. Written once, used everywhere.</p>
+<ul>
+  <li><strong><code>Toast.tsx</code>:</strong> Shows the temporary green success or red error popups at the top of the screen.</li>
+  <li><strong><code>QRCodeCanvas.tsx</code> & <code>PhotoUploadInput.tsx</code>:</strong> Specialized tools for drawing Gate Pass QR codes and handling camera uploads.</li>
+  <li><strong><code>PWAInstallBanner.tsx</code>:</strong> Manages the popup that asks parents to "Add to Home Screen".</li>
+</ul>
+
+<h2>6. THE STAFF PORTAL (<code>src/pages/staff</code>)</h2>
+<p>This is the most complex portal, used by class teachers.</p>
+<div class="box">
+  <h3><code>StaffPortal.tsx</code> & <code>StaffLogin.tsx</code></h3>
+  <p><strong>Responsibility:</strong> The Gatekeeper. Checks the Supabase <code>staff</code> table. If the email/password match, it lets them into the Dashboard.</p>
+
+  <h3><code>StaffDashboard.tsx</code></h3>
+  <p><strong>Responsibility:</strong> The Main Classroom View. Fetches all students from Supabase who have the same <code>class_name</code> as the logged-in teacher.</p>
+
+  <h3><code>ActivityFormModal.tsx</code> & <code>StudentHistoryModal.tsx</code></h3>
+  <p><strong>Responsibility:</strong> Logging daily activities (Food, Sleep, Custom). Clicking submit saves a row to the <code>logs</code> table in Supabase.</p>
+
+  <h3><code>AnnouncementsPanel.tsx</code> & <code>HomeworkPanel.tsx</code></h3>
+  <p><strong>Responsibility:</strong> Creating class-wide broadcasts and homework. <strong>Technical Detail:</strong> Polls every 5 seconds silently to check for new Parent Q&A replies.</p>
+
+  <h3><code>StaffQRScannerModal.tsx</code></h3>
+  <p><strong>Responsibility:</strong> Uses the device's camera to scan parent gate passes and marks the handover as COMPLETED in Supabase.</p>
+</div>
+
+<h2>7. THE PARENT PORTAL (<code>src/pages/parent</code>)</h2>
+<p>Designed to be mobile-first and incredibly simple for parents.</p>
+<div class="box">
+  <h3><code>ParentPortal.tsx</code> & <code>ParentLogin.tsx</code></h3>
+  <p><strong>Responsibility:</strong> Authenticates the parent by matching phone/email in the <code>students</code> table.</p>
+
+  <h3><code>ParentFeed.tsx</code></h3>
+  <p><strong>Responsibility:</strong> The Daily Timeline. Queries the <code>logs</code> table for the specific child and renders a beautiful vertical timeline.</p>
+
+  <h3><code>MessagesTab.tsx</code> & <code>HomeworkTab.tsx</code></h3>
+  <p><strong>Responsibility:</strong> Two-Way Chat with teachers. When a parent types a reply, it formats the sender name as "Parent Name (Child Name)" and saves it to the database.</p>
+
+  <h3><code>ParentGatePassModal.tsx</code></h3>
+  <p><strong>Responsibility:</strong> Generates a secure QR code on the screen for the security guard to scan.</p>
+</div>
+
+<h2>8. THE GATE STAFF PORTAL (<code>src/pages/gate</code>)</h2>
+<p>A specialized, restricted portal for security guards.</p>
+<ul>
+  <li><strong><code>GateDashboard.tsx</code>:</strong> A giant full-screen camera scanner. When a guard scans a parent's QR code, it pulls the student's photo and name on the screen to verify identity securely.</li>
+</ul>
+
+<h2>9. AUTHENTICATION & DATA FLOW (MAINTENANCE SUMMARY)</h2>
+<p>If you are maintaining this app, you must understand the "Golden Rules" of how data flows:</p>
+<ol>
+  <li><strong>The Class Name Link:</strong> The entire app is glued together by the <code>class_name</code>. A teacher in "Nursery" will ONLY see students whose <code>class_name</code> is exactly "Nursery". Check spelling!</li>
+  <li><strong>Parent to Child Link:</strong> Parents do not have traditional User Accounts. A parent logs in using the credentials attached to their child's <code>students</code> row.</li>
+  <li><strong>Background Polling:</strong> Every 5 seconds, components silently ask Supabase, "Is there new data?". This happens invisibly and ensures chats feel "live".</li>
+  <li><strong>Offline Fallbacks:</strong> Many functions use a 3-second timeout. If Supabase takes too long, it saves to local memory, preventing freezes.</li>
+</ol>
+
+<div class="note">
+  <strong>How to Monitor the App:</strong><br>
+  As a maintainer, your primary tool is the <strong>Supabase Dashboard</strong>. Use the Table Editor to add new students, fix spelling errors, or delete test data. Check the Database API logs if users complain about slowness.
+</div>
+
+</body>
+</html>

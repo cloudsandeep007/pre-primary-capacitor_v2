@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Calendar, ChevronLeft, ChevronRight, StickyNote, CheckCircle2, ShieldCheck, UserCheck } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronRight, CheckCircle2, ShieldCheck, UserCheck, Megaphone, BookOpen, Calendar, StickyNote } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import { Student, Staff, DailyLog, MediaItem, GatePass } from '@/lib/types';
@@ -8,8 +8,13 @@ import { Logo } from '@/components/Logo';
 import { FullScreenSpinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
 import { getMockLogs, getMockStudents, getMockGatePasses, getMockStaff } from '@/lib/mockData';
-
 import { ParentGatePassModal } from './ParentGatePassModal';
+import { MessagesTab } from './MessagesTab';
+import { HomeworkTab } from './HomeworkTab';
+import { CalendarTab } from './CalendarTab';
+import { ParentClassworkTab } from './ParentClassworkTab';
+import { PerformanceTab } from './PerformanceTab';
+import { ImageViewerModal } from '@/components/ImageViewerModal';
 
 interface ParentFeedProps {
   student: Student;
@@ -23,6 +28,9 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [showGatePass, setShowGatePass] = useState(false);
   const [todayGatePass, setTodayGatePass] = useState<GatePass | null>(null);
+  // Main tab: diary | messages | homework | calendar | classwork | performance
+  const [parentTab, setParentTab] = useState<'diary' | 'messages' | 'homework' | 'calendar' | 'classwork' | 'performance'>('diary');
+  const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   useEffect(() => {
     loadLogs(selectedDate);
@@ -220,7 +228,89 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
           </button>
         </div>
 
-        {/* Digital Gate Pass & Live Handover Entry Status Banner */}
+        {/* Parent Main Tab Nav */}
+        <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
+          <button
+            onClick={() => setParentTab('diary')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'diary'
+                ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-teal-300'
+            }`}
+          >
+            📖 Daily Diary
+          </button>
+          <button
+            onClick={() => setParentTab('messages')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'messages'
+                ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-violet-300'
+            }`}
+          >
+            <Megaphone size={12} /> Announcements
+          </button>
+          <button
+            onClick={() => setParentTab('homework')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'homework'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-amber-300'
+            }`}
+          >
+            <BookOpen size={12} /> Homework
+          </button>
+          <button
+            onClick={() => setParentTab('calendar')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'calendar'
+                ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-sky-300'
+            }`}
+          >
+            <Calendar size={12} /> Calendar
+          </button>
+          <button
+            onClick={() => setParentTab('classwork')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'classwork'
+                ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-teal-300'
+            }`}
+          >
+            <BookOpen size={12} /> Classwork
+          </button>
+          <button
+            onClick={() => setParentTab('performance')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'performance'
+                ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-300'
+            }`}
+          >
+            <CheckCircle2 size={12} /> Performance
+          </button>
+        </div>
+
+        {/* Messages Tab */}
+        {parentTab === 'messages' && <MessagesTab student={student} />}
+
+        {/* Homework Tab */}
+        {parentTab === 'homework' && <HomeworkTab student={student} />}
+
+        {/* Calendar Tab */}
+        {parentTab === 'calendar' && <CalendarTab student={student} />}
+
+        {/* Classwork Tab */}
+        {parentTab === 'classwork' && <ParentClassworkTab student={student} />}
+
+        {/* Performance Tab */}
+        {parentTab === 'performance' && <PerformanceTab student={student} />}
+
+        {/* Diary Tab */}
+        {parentTab === 'diary' && (
+          <>
+
         <div className="mb-6 space-y-3">
           {todayGatePass && todayGatePass.status === 'COMPLETED' ? (
             <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl p-4 flex items-start justify-between shadow-sm animate-[fadeIn_0.3s_ease-out]">
@@ -304,15 +394,22 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
 
             {/* Timeline of logs */}
             {logs.map((log, i) => (
-              <ActivityCard key={log.id} log={log} index={i} />
+              <ActivityCard key={log.id} log={log} index={i} onImageClick={setViewerImage} />
             ))}
           </div>
+        )}
+          </>
         )}
       </main>
 
       {/* Digital Gate Pass Modal */}
       {showGatePass && (
         <ParentGatePassModal student={student} onClose={() => setShowGatePass(false)} />
+      )}
+
+      {/* Image Viewer Modal */}
+      {viewerImage && (
+        <ImageViewerModal imageUrl={viewerImage} onClose={() => setViewerImage(null)} />
       )}
     </div>
   );
@@ -358,7 +455,7 @@ function SummaryBadges({ log }: { log: DailyLog }) {
   );
 }
 
-function ActivityCard({ log, index }: { log: DailyLog; index: number }) {
+function ActivityCard({ log, index, onImageClick }: { log: DailyLog; index: number; onImageClick?: (url: string) => void }) {
   const time = new Date(log.created_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const staffMatch = getMockStaff().find((s: Staff) => s.name.toLowerCase() === (log.staff_name || '').toLowerCase());
 
@@ -396,7 +493,7 @@ function ActivityCard({ log, index }: { log: DailyLog; index: number }) {
       {/* Photos & Videos Media Gallery */}
       {((log.media_items && log.media_items.length > 0) || log.photo_url) && (
         <div className="px-5 pb-3">
-          <MediaGallery items={log.media_items} fallbackPhoto={log.photo_url} />
+          <MediaGallery items={log.media_items} fallbackPhoto={log.photo_url} onImageClick={onImageClick} />
         </div>
       )}
 
@@ -413,7 +510,7 @@ function ActivityCard({ log, index }: { log: DailyLog; index: number }) {
   );
 }
 
-function MediaGallery({ items, fallbackPhoto }: { items?: MediaItem[] | string | null; fallbackPhoto?: string | null }) {
+function MediaGallery({ items, fallbackPhoto, onImageClick }: { items?: MediaItem[] | string | null; fallbackPhoto?: string | null; onImageClick?: (url: string) => void }) {
   let parsedItems: MediaItem[] = [];
   if (items) {
     if (typeof items === 'string') {
@@ -457,8 +554,9 @@ function MediaGallery({ items, fallbackPhoto }: { items?: MediaItem[] | string |
             <img
               src={item.url}
               alt={item.name || 'Activity photo'}
-              className="w-full max-h-80 object-cover rounded-xl"
+              className="w-full max-h-80 object-cover rounded-xl cursor-pointer hover:opacity-90 transition-opacity"
               loading="lazy"
+              onClick={() => onImageClick?.(item.url)}
             />
           )}
         </div>

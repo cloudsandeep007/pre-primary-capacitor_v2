@@ -1,0 +1,97 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Samsidh Developer Guide</title>
+<style>
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; padding: 20px; line-height: 1.6; }
+  h1 { color: #2c3e50; font-size: 26pt; border-bottom: 3px solid #f39c12; padding-bottom: 10px; margin-bottom: 30px; }
+  h2 { color: #d35400; font-size: 18pt; margin-top: 40px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+  h3 { color: #e67e22; font-size: 14pt; margin-top: 25px; }
+  p { font-size: 11pt; color: #333; }
+  ul { font-size: 11pt; color: #333; }
+  li { margin-bottom: 10px; }
+  .code { font-family: 'Courier New', Courier, monospace; background-color: #f4f4f4; padding: 10px; border-radius: 5px; border: 1px solid #ddd; white-space: pre-wrap; font-size: 10pt; }
+  .note { background-color: #fdf2e9; border-left: 5px solid #e67e22; padding: 15px; margin: 20px 0; font-style: italic; }
+  .box { background-color: #fcfcfc; border: 1px solid #eee; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<h1>SAMSIDH PRESCHOOL APP: DEVELOPER'S FUNCTIONALITY COMPENDIUM</h1>
+<p>This document serves as an exhaustive, technical breakdown of every single feature in the application. It is written for incoming developers to understand the exact coding paradigms, state management, and architectural decisions without needing to read the raw source code.</p>
+
+<h2>1. CORE ARCHITECTURE & ROUTING</h2>
+
+<div class="box">
+  <h3>1.1 Single Page Application (SPA) Routing</h3>
+  <p><strong>Feature:</strong> Navigating between Parent, Staff, and Gate portals without page reloads.</p>
+  <p><strong>Technical Approach:</strong> Custom Hash Router.</p>
+  <p><strong>Code Flow:</strong> <code>App.tsx</code> listens to the <code>hashchange</code> browser event. If the URL is <code>#/staff</code>, React conditionally renders <code>&lt;StaffPortal /&gt;</code> without downloading a new HTML page.</p>
+</div>
+
+<div class="box">
+  <h3>1.2 Global Error Boundary</h3>
+  <p><strong>Feature:</strong> Preventing the "White Screen of Death" if a React component crashes.</p>
+  <p><strong>Technical Approach:</strong> React 18 Error Boundaries.</p>
+  <p><strong>Code Flow:</strong> <code>src/components/ErrorBoundary.tsx</code> wraps the entire application. It intercepts JavaScript exceptions and renders a fallback UI.</p>
+</div>
+
+<h2>2. STATE MANAGEMENT & AUTHENTICATION</h2>
+
+<div class="box">
+  <h3>2.1 "Passwordless" Parent Authentication</h3>
+  <p><strong>Technical Approach:</strong> Supabase Table lookups + <code>localStorage</code> persistence.</p>
+  <p><strong>Code Flow:</strong></p>
+  <ul>
+    <li><code>ParentLogin.tsx</code> sends a SQL equivalent: <span class="code">SELECT * FROM students WHERE guardian_phone = X AND guardian_email = Y</span></li>
+    <li>If matched, the JSON payload is stored in <code>localStorage.getItem('samsidh_parent')</code>.</li>
+    <li><code>ParentPortal.tsx</code> checks <code>localStorage</code> on mount and hydrates React state.</li>
+  </ul>
+</div>
+
+<div class="box">
+  <h3>2.2 Teacher Role Authentication</h3>
+  <p><strong>Technical Approach:</strong> Basic table credential matching.</p>
+  <p><strong>Code Flow:</strong></p>
+  <ul>
+    <li><code>StaffLogin.tsx</code> queries the <code>staff</code> table for matching email/password.</li>
+    <li>It strictly verifies that <code>staff.role === 'teacher'</code> to prevent security guards from logging into the teacher portal.</li>
+  </ul>
+</div>
+
+<h2>3. DATA FETCHING & OFFLINE RESILIENCE</h2>
+
+<div class="box">
+  <h3>3.1 Optimistic UI & Promise Racing</h3>
+  <p><strong>Feature:</strong> The app never freezes if the internet drops.</p>
+  <p><strong>Technical Approach:</strong> <code>Promise.race()</code>.</p>
+  <p><strong>Code Flow:</strong> When posting an announcement, a <code>Promise.race</code> triggers the Supabase request and a 3-second timer. If the network drops, the timer wins, executing a <code>catch</code> block that generates a temporary local ID and injects the mock object into React State instantly.</p>
+</div>
+
+<div class="box">
+  <h3>3.2 Background Polling (Real-time Sync)</h3>
+  <p><strong>Technical Approach:</strong> React <code>useEffect</code> + <code>setInterval</code>.</p>
+  <p><strong>Code Flow:</strong> <code>MessagesTab.tsx</code> uses <code>setInterval(fetchAnnouncements, 5000)</code>. It deliberately skips setting <code>loading = true</code> during these polls to prevent the screen from flashing, allowing React's Virtual DOM to smoothly inject new chat bubbles.</p>
+</div>
+
+<h2>4. DOMAIN-SPECIFIC FEATURES</h2>
+
+<div class="box">
+  <h3>4.1 Daily Activity Logging</h3>
+  <p><strong>Technical Approach:</strong> Modal Forms and Custom Window Events.</p>
+  <p><strong>Code Flow:</strong> <code>ActivityFormModal.tsx</code> submits a row to the <code>logs</code> table. It then fires <code>window.dispatchEvent(new CustomEvent('log_added'))</code>. The Dashboard catches this event and re-fetches logs, avoiding the need for heavy state management libraries like Redux.</p>
+</div>
+
+<div class="box">
+  <h3>4.2 Gate Pass Cryptography & Scanning</h3>
+  <p><strong>Feature:</strong> Secure handover QR system.</p>
+  <p><strong>Code Flow (Generation):</strong> <code>ParentGatePassModal.tsx</code> inserts a PENDING row into <code>gate_passes</code> and encodes the UUID into a Base64 QR code image.</p>
+  <p><strong>Code Flow (Scanning):</strong> <code>GateDashboard.tsx</code> mounts <code>Html5QrcodeScanner</code>. It parses camera frames 10 times a second. Upon detecting the UUID, it fetches the student photo from Supabase. Clicking "Confirm" issues an <code>UPDATE</code> SQL command to mark it COMPLETED.</p>
+</div>
+
+<div class="box">
+  <h3>4.3 Two-Way Chat Interception</h3>
+  <p><strong>Technical Approach:</strong> Polymorphic sender types.</p>
+  <p><strong>Code Flow:</strong> The <code>announcement_replies</code> schema uses <code>sender_type</code> ('teacher' or 'parent'). When rendering chat bubbles, the frontend applies a <code>ml-auto</code> Tailwind class if the sender is 'teacher', pushing the bubble to the right side of the screen like WhatsApp.</p>
+</div>
+
+</body>
+</html>

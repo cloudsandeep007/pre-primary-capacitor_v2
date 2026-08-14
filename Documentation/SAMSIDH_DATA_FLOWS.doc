@@ -1,0 +1,112 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Samsidh Data Flows</title>
+<style>
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; padding: 20px; line-height: 1.6; }
+  h1 { color: #2c3e50; font-size: 26pt; border-bottom: 3px solid #8e44ad; padding-bottom: 10px; margin-bottom: 30px; }
+  h2 { color: #8e44ad; font-size: 18pt; margin-top: 40px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+  h3 { color: #2980b9; font-size: 14pt; margin-top: 25px; }
+  p { font-size: 11pt; color: #333; }
+  ul { font-size: 11pt; color: #333; }
+  li { margin-bottom: 10px; }
+  .code { font-family: 'Courier New', Courier, monospace; background-color: #f4f4f4; padding: 15px; border-radius: 5px; border: 1px solid #ddd; white-space: pre; }
+  .note { background-color: #e8f4f8; border-left: 5px solid #3498db; padding: 15px; margin: 20px 0; font-style: italic; }
+  .box { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<h1>SAMSIDH PRESCHOOL APP: INTERNAL DATA FLOWS & REQUEST LIFECYCLES</h1>
+<p>This document is an extreme deep-dive into the internal request cycles, component lifecycles, and database interactions of the Samsidh Preschool Application. It maps out exactly how data moves from the user's screen (Frontend React Components) across the network to the database (Supabase) and back to other users.</p>
+
+<h2>1. AUTHENTICATION & SESSION DATA FLOW</h2>
+<p>The application does not use traditional session cookies or JWT tokens for its primary portals. Instead, it relies on a local state mechanism verified against database records.</p>
+
+<div class="box">
+  <h3>1.1 Parent Login Flow</h3>
+  <p>When a parent attempts to log in, the system validates their phone number and email against the <code>students</code> table to find their child.</p>
+  <ul>
+    <li><strong>Step 1:</strong> Parent enters Phone & Email in UI.</li>
+    <li><strong>Step 2:</strong> UI sends request: <code>supabase.from('students').select('*').eq('guardian_phone', phone).eq('guardian_email', email)</code>.</li>
+    <li><strong>Step 3:</strong> Database executes SQL SELECT.</li>
+    <li><strong>Step 4 (Success):</strong> Returns Student Object. App saves to <code>localStorage</code> and redirects to Parent Feed.</li>
+    <li><strong>Step 4 (Fail):</strong> Returns Empty Array. App displays "Invalid credentials" error popup.</li>
+  </ul>
+</div>
+
+<div class="box">
+  <h3>1.2 Staff Authentication Flow</h3>
+  <p>Staff login explicitly relies on the <code>staff</code> table and validates the role.</p>
+  <ul>
+    <li><strong>Step 1:</strong> Teacher submits Email & Password.</li>
+    <li><strong>Step 2:</strong> UI sends request to <code>staff</code> table matching email and password.</li>
+    <li><strong>Step 3 (Valid):</strong> Checks if role is 'teacher'. Saves to local storage and redirects to Staff Dashboard.</li>
+    <li><strong>Step 3 (Invalid):</strong> If role is 'gate_staff' or incorrect password, login is rejected with "Access denied".</li>
+  </ul>
+</div>
+
+<h2>2. REAL-TIME DATA SYNC (THE POLLING MECHANISM)</h2>
+<p>Because WebSockets are disabled by default on new Supabase tables, the application guarantees "real-time" chat feeling via a 5-second background polling cycle.</p>
+
+<div class="box">
+  <h3>2.1 The Polling Lifecycle (Announcements & Replies)</h3>
+  <ul>
+    <li>The Parent app mounts and starts a <code>setInterval(5000ms)</code>.</li>
+    <li>A Teacher creates a new post. It is immediately inserted into the <code>announcements</code> table (Success 200 OK).</li>
+    <li>Within 5 seconds, the Parent's app invisible poll fires, fetching the new row.</li>
+    <li>The Parent's app calculates the difference and injects the new post into the screen without flashing or showing a loading spinner.</li>
+  </ul>
+  <div class="note">
+    <strong>Technical Deep-Dive: Zero-Flicker Updates</strong><br>
+    The <code>setLoading(true)</code> state is deliberately bypassed during the interval loops. When new data arrives, React's Virtual DOM calculates the exact difference (e.g., one new chat bubble) and injects only that element into the browser's DOM, resulting in a buttery-smooth sync.
+  </div>
+</div>
+
+<h2>3. DAILY LOGS ARCHITECTURE</h2>
+<p>Teachers log activities for students (Food, Sleep, Custom). Parents view this as a timeline.</p>
+
+<div class="box">
+  <h3>3.1 The Activity Submission Lifecycle</h3>
+  <ul>
+    <li>Teacher clicks a Student Card, opening the ActivityFormModal.</li>
+    <li>Selects Type (Food/Sleep/Custom) and fills details.</li>
+    <li>Clicks Submit. The app triggers a <code>Promise.race</code> between the Supabase INSERT command and a 3-second timeout.</li>
+    <li>If successful, a row is added to the <code>logs</code> table. A window event <code>log_added</code> is dispatched.</li>
+    <li>The StaffDashboard catches this event, re-fetches logs, and puts a green checkmark on the student's card.</li>
+  </ul>
+  <div class="note">
+    <strong>Database Schema Enforcement:</strong><br>
+    The <code>logs</code> table strictly requires a <code>student_id</code>. Supabase enforces this at the database level. If the code attempts to send a log without an ID, the API immediately rejects it with a 400 Bad Request.
+  </div>
+</div>
+
+<h2>4. SECURE GATE PASS (QR CODE) LIFECYCLE</h2>
+<p>The most critical security feature of the app. It ensures a child cannot be released without cryptographic verification.</p>
+
+<div class="box">
+  <h3>4.1 End-to-End Handover Flow</h3>
+  <ul>
+    <li><strong>Parent Action:</strong> Parent arrives at school and clicks "Generate Gate Pass". The app inserts a <code>PENDING</code> row into <code>gate_passes</code> and receives a Pass ID.</li>
+    <li><strong>QR Generation:</strong> The app takes the Pass ID and Student ID and draws a 2D barcode canvas on the screen.</li>
+    <li><strong>Guard Scan:</strong> The Guard points their camera at the parent's phone. The app extracts the IDs from the image.</li>
+    <li><strong>Identity Verification:</strong> The Guard's app fetches the student's photo and name from Supabase and displays it.</li>
+    <li><strong>Completion:</strong> Guard physically verifies the child matches the photo, clicks "Confirm", and updates the <code>gate_passes</code> table to <code>COMPLETED</code>.</li>
+  </ul>
+</div>
+
+<h2>5. NETWORK FAILURE & RESILIENCE (OPTIMISTIC UI)</h2>
+<p>The application is built for environments where Wi-Fi or 4G data might drop unexpectedly.</p>
+
+<div class="box">
+  <h3>5.1 The Offline Creation Flow</h3>
+  <p>When a user attempts to send data without an internet connection, the system utilizes "Optimistic UI" combined with <code>Promise.race()</code>.</p>
+  <ul>
+    <li>User clicks Post. The system starts the Supabase INSERT and a 3000ms timer simultaneously.</li>
+    <li>If the network drops, the Supabase request hangs indefinitely.</li>
+    <li>After 3 seconds, the timer "wins" the race, forcing the code into a Catch block.</li>
+    <li>The app creates a fake 'Local' Data Object (appending 'local-' to the ID) and injects it into React's state.</li>
+    <li>The UI renders the new post instantly, and displays a Toast popup: "Network slow. Saved locally."</li>
+  </ul>
+</div>
+
+</body>
+</html>

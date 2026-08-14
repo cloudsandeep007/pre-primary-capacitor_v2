@@ -14,6 +14,8 @@ import { showToast } from '@/components/Toast';
 
 import { StudentHistoryModal } from '@/pages/staff/StudentHistoryModal';
 import { ActivityFormModal } from '@/pages/staff/ActivityFormModal';
+import { AddStaffModal } from '@/pages/admin/AddStaffModal';
+import { AnalyticsTab } from './AnalyticsTab';
 
 export function AdminDashboard() {
   const { navigate } = useRouter();
@@ -34,6 +36,7 @@ export function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewHistoryStudent, setViewHistoryStudent] = useState<Student | null>(null);
   const [logActivityStudent, setLogActivityStudent] = useState<Student | null>(null);
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
 
   useEffect(() => {
     if (adminAuthenticated) {
@@ -512,85 +515,7 @@ export function AdminDashboard() {
 
         {/* Tab 2: Analytics & Overall Activity Breakdown */}
         {activeTab === 'analytics' && (
-          <div className="space-y-6">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              Overall Activity Analytics & School Metrics
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Handover Completion Analytics */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
-                  <span>Handover Completion Rate</span>
-                  <span className="text-emerald-600 font-extrabold">
-                    {studentList.length > 0
-                      ? Math.round((completedHandoversToday / studentList.length) * 100)
-                      : 0}%
-                  </span>
-                </h3>
-                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
-                  <div
-                    className="bg-emerald-500 h-full transition-all duration-500"
-                    style={{
-                      width: `${studentList.length > 0 ? (completedHandoversToday / studentList.length) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-slate-500 font-semibold">
-                  <span>Picked up: {completedHandoversToday} students</span>
-                  <span>Pending: {studentList.length - completedHandoversToday} students</span>
-                </div>
-              </div>
-
-              {/* Mood Distribution */}
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Logged Mood Distribution
-                </h3>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-sky-50 p-3 rounded-xl border border-sky-100">
-                    <p className="text-xl">😊</p>
-                    <p className="text-xs font-bold text-sky-800 mt-1">Happy</p>
-                    <p className="text-sm font-bold text-slate-700">
-                      {activityLogs.filter((l) => l.mood === 'happy').length}
-                    </p>
-                  </div>
-                  <div className="bg-amber-50 p-3 rounded-xl border border-amber-100">
-                    <p className="text-xl">⚡</p>
-                    <p className="text-xs font-bold text-amber-800 mt-1">Energetic</p>
-                    <p className="text-sm font-bold text-slate-700">
-                      {activityLogs.filter((l) => l.mood === 'energetic').length}
-                    </p>
-                  </div>
-                  <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100">
-                    <p className="text-xl">🥺</p>
-                    <p className="text-xs font-bold text-indigo-800 mt-1">Tearful</p>
-                    <p className="text-sm font-bold text-slate-700">
-                      {activityLogs.filter((l) => l.mood === 'tearful').length}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Class-wise Log Counts */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Class Grade Activity Distribution
-              </h3>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                {['Nursery', 'Junior KG', 'Senior KG'].map((cls) => {
-                  const classStudents = studentList.filter((s) => s.class_name === cls);
-                  return (
-                    <div key={cls} className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
-                      <h4 className="font-bold text-sm text-slate-800">{cls}</h4>
-                      <p className="text-xs text-slate-500 mt-0.5">{classStudents.length} Students</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          <AnalyticsTab />
         )}
 
         {/* Tab 3: Students & Verification Photos Directory */}
@@ -662,9 +587,17 @@ export function AdminDashboard() {
         {/* Tab 4: Teachers & Staff Directory */}
         {activeTab === 'staff' && (
           <div className="space-y-4">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              School Staff & Teachers Directory ({filteredStaff.length})
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                School Staff & Teachers Directory ({filteredStaff.length})
+              </h2>
+              <button 
+                onClick={() => setShowAddStaffModal(true)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+              >
+                + Add Staff
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {filteredStaff.map((st) => (
@@ -682,6 +615,11 @@ export function AdminDashboard() {
                       {st.role === 'admin' && (
                         <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
                           ADMIN
+                        </span>
+                      )}
+                      {st.role === 'gate_staff' && (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                          GUARD
                         </span>
                       )}
                     </div>
@@ -729,6 +667,17 @@ export function AdminDashboard() {
           onClose={() => setLogActivityStudent(null)}
           onSaved={() => {
             setLogActivityStudent(null);
+            loadAllAdminData();
+          }}
+        />
+      )}
+
+      {/* Add Staff Modal */}
+      {showAddStaffModal && (
+        <AddStaffModal 
+          onClose={() => setShowAddStaffModal(false)}
+          onSaved={() => {
+            setShowAddStaffModal(false);
             loadAllAdminData();
           }}
         />

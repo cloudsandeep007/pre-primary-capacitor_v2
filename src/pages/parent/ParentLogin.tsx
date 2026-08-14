@@ -39,32 +39,33 @@ export function ParentLogin({ onLogin }: ParentLoginProps) {
       let studentAccount: Student | null = null;
 
       try {
-        let res = await supabase
+        const timeout = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 3000)
+        );
+        const query = supabase
           .from('students')
           .select('*')
-          .or(`roll_no.eq.${roll},roll_number.eq.${roll}`)
+          .eq('roll_no', roll)
           .maybeSingle();
 
-        if (res.error) {
-          res = await supabase
-            .from('students')
-            .select('*')
-            .eq('roll_no', roll)
-            .maybeSingle();
-        }
+        const res = await Promise.race([query, timeout]) as Awaited<typeof query>;
 
         if (!res.error && res.data) {
           const d = res.data;
           studentAccount = {
-            id: d.id || String(d.roll_no || d.roll_number),
-            roll_no: String(d.roll_no || d.roll_number || roll),
+            id: d.id || String(d.roll_no),
+            roll_no: String(d.roll_no || roll),
             pin: String(d.pin || ''),
             name: d.name || 'Student',
             class_name: d.class_name || d.class || 'Nursery',
+            guardian_name: d.guardian_name || '',
+            parent_phone: d.parent_phone || d.parent_mobile || '',
+            student_photo_url: d.student_photo_url || d.photo_url || '',
+            parent_photo_url: d.parent_photo_url || '',
           };
         }
       } catch (err) {
-        console.warn('[ParentLogin] Supabase unavailable, falling back to local demo data');
+        console.warn('[ParentLogin] Supabase unavailable or timed out, using demo data');
       }
 
       if (!studentAccount) {

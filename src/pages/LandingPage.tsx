@@ -44,8 +44,8 @@ export function LandingPage() {
           Teachers log meals, naps, moods, and photos. Parents get a daily report card — all in one warm, simple app.
         </p>
 
-        {/* Two large portal buttons */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Three portal buttons */}
+        <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-4">
           <button
             onClick={() => navigate('/staff')}
             className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-sky-500 to-sky-600 p-6 text-left shadow-xl shadow-sky-500/25 transition-all duration-300 hover:shadow-2xl hover:shadow-sky-500/30 hover:-translate-y-1 active:translate-y-0"
@@ -72,6 +72,20 @@ export function LandingPage() {
             </div>
             <h2 className="text-2xl font-bold text-white mb-1">Parent Portal</h2>
             <p className="text-teal-50 text-sm">View your child's daily report</p>
+          </button>
+
+          <button
+            onClick={() => navigate('/gate')}
+            className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500 to-orange-500 p-6 text-left shadow-xl shadow-amber-500/25 transition-all duration-300 hover:shadow-2xl hover:shadow-amber-500/30 hover:-translate-y-1 active:translate-y-0"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm">
+                <Shield size={28} className="text-white" />
+              </div>
+              <ArrowRight size={24} className="text-white/70 group-hover:translate-x-1 transition-transform" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-1">Gate Staff</h2>
+            <p className="text-amber-50 text-sm">Scan QR & manage child handovers</p>
           </button>
         </div>
 

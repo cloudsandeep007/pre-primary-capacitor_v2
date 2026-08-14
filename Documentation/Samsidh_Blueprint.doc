@@ -1,0 +1,114 @@
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><title>Samsidh Preschool Blueprint</title>
+<style>
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; padding: 20px; line-height: 1.6; }
+  h1 { color: #2c3e50; font-size: 24pt; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+  h2 { color: #2980b9; font-size: 18pt; margin-top: 30px; }
+  h3 { color: #16a085; font-size: 14pt; }
+  p { font-size: 11pt; color: #333; }
+  ul { font-size: 11pt; color: #333; }
+  li { margin-bottom: 8px; }
+  .note { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin: 15px 0; font-style: italic; }
+  .table-box { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+
+<h1>Samsidh Preschool Application Blueprint</h1>
+
+<p>This document is a comprehensive, easy-to-understand guide to how the Samsidh preschool application is built, how it works, and how to maintain it in production. It is written so that both technical and non-technical stakeholders can understand the system.</p>
+
+<h2>1. System Overview</h2>
+<p>The Samsidh application is a <strong>Progressive Web App (PWA)</strong>. This means it is built using standard website technologies, but it can be "installed" on a parent's or teacher's smartphone and function exactly like a native app (with an icon on the home screen, offline capabilities, and fullscreen mode).</p>
+
+<ul>
+  <li><strong>Frontend (What the user sees):</strong> Built with <strong>React</strong> and <strong>Vite</strong>. It uses TailwindCSS for beautiful, responsive styling.</li>
+  <li><strong>Backend & Database (Where data is stored):</strong> Powered by <strong>Supabase</strong>, a cloud database service. It handles user authentication, stores all data in a PostgreSQL database, and provides real-time syncing.</li>
+  <li><strong>Hosting:</strong> The app files can be hosted anywhere that serves static websites (e.g., Vercel, Netlify, or Hostinger).</li>
+</ul>
+
+<h2>2. User Roles & Portals</h2>
+<p>The application is divided into distinct "Portals" based on who is logging in.</p>
+
+<h3>A. Parent Portal</h3>
+<ul>
+  <li><strong>Who uses it:</strong> Parents/Guardians.</li>
+  <li><strong>What it does:</strong> Allows parents to view their child's daily logs (food, sleep, activities), track gate pass handovers, read teacher announcements, check homework, and reply to teachers in a two-way chat format.</li>
+</ul>
+
+<h3>B. Staff (Teacher) Portal</h3>
+<ul>
+  <li><strong>Who uses it:</strong> Class Teachers.</li>
+  <li><strong>What it does:</strong> Allows teachers to manage their specific class. They can log daily activities for students, create announcements, assign homework, and scan QR codes for gate passes.</li>
+</ul>
+
+<h3>C. Gate Staff Portal</h3>
+<ul>
+  <li><strong>Who uses it:</strong> Security Guards / Gate Staff.</li>
+  <li><strong>What it does:</strong> A highly restricted, secure portal that only allows guards to scan a parent's QR code (or enter a roll number) to authorize and complete the handover of a child at the end of the day.</li>
+</ul>
+
+<h2>3. Database Blueprint (Supabase)</h2>
+<p>All data is stored in the Supabase PostgreSQL database. Below are the core tables and what they do in simple terms.</p>
+
+<div class="note"><strong>Important:</strong> If you ever need to manually delete, edit, or view data, you do so via the Supabase Dashboard -> Table Editor.</div>
+
+<div class="table-box">
+  <h3>User & Identity Tables</h3>
+  <ul>
+    <li><strong>staff:</strong> Stores all employees (id, name, email, role, assigned_class).</li>
+    <li><strong>students:</strong> Stores all enrolled children (id, name, roll_number, class_name, guardian_name).</li>
+  </ul>
+</div>
+
+<div class="table-box">
+  <h3>Daily Operations Tables</h3>
+  <ul>
+    <li><strong>logs:</strong> Daily activities logged by teachers (type, description, timestamp).</li>
+    <li><strong>gate_passes:</strong> Security tracking for student handovers (status: PENDING, COMPLETED).</li>
+  </ul>
+</div>
+
+<div class="table-box">
+  <h3>Communication Tables</h3>
+  <ul>
+    <li><strong>announcements:</strong> Broadcast messages sent by teachers to a whole class.</li>
+    <li><strong>announcement_replies:</strong> The chat thread underneath an announcement.</li>
+    <li><strong>homework:</strong> Tasks assigned by teachers with due dates.</li>
+    <li><strong>homework_replies:</strong> The Q&A chat thread underneath a homework assignment.</li>
+  </ul>
+</div>
+
+<h2>4. How Things Connect (Data Flow)</h2>
+<p>Here is a layman's breakdown of how a feature works from end-to-end (Example: A teacher posts an announcement).</p>
+<ol>
+  <li>The teacher types the message in the Staff App and clicks "Post".</li>
+  <li>The app sends a request to Supabase to insert a new row into the <code>announcements</code> table.</li>
+  <li>The Parent App, which is programmed to silently check the database every 5 seconds (Background Polling), detects the new row.</li>
+  <li>The Parent App downloads the new row and displays it on the parent's screen instantly.</li>
+</ol>
+
+<h2>5. Maintenance & Production Guide</h2>
+<p>When the app goes live, here is what you need to know to keep it running smoothly.</p>
+
+<h3>A. The "Blank Screen" or "Crashing" Issue</h3>
+<ul>
+  <li><strong>Cause:</strong> This usually means the app lost connection to the internet, or the Supabase backend is paused.</li>
+  <li><strong>Fix:</strong> Log into your Supabase Dashboard and check if the database has been "Paused" (Free tier databases pause automatically after 7 days of inactivity). Click "Restore".</li>
+</ul>
+
+<h3>B. Adding New Users</h3>
+<ul>
+  <li>You add new students or staff manually via the Supabase Table Editor.</li>
+  <li><strong>Critical Rule:</strong> Make sure you spell <code>class_name</code> exactly the same across both the students table and the staff table (e.g., "Nursery" vs "nursery" matters).</li>
+</ul>
+
+<h3>C. Updating the App</h3>
+<ul>
+  <li>Run the build command (<code>npm run build</code>).</li>
+  <li>Upload the <code>dist/</code> folder to your hosting provider (like Vercel).</li>
+  <li>Users will automatically get the new version the next time they close and reopen the app on their phones.</li>
+</ul>
+
+</body>
+</html>
