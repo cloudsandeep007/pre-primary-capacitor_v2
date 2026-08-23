@@ -18,7 +18,21 @@ const ParentOnboarding = lazy(() => import('@/pages/parent/ParentOnboarding').th
 const DiagnosticsPage = lazy(() => import('@/pages/diagnostics/DiagnosticsPage').then(m => ({ default: m.DiagnosticsPage })));
 
 function AppContent() {
-  const { route } = useRouter();
+  const { route, navigate } = useRouter();
+
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        const redirect = localStorage.getItem('authRedirect');
+        if (redirect) {
+          localStorage.removeItem('authRedirect');
+          // small delay to let supabase-js finish session persistence
+          setTimeout(() => navigate(redirect as any), 100);
+        }
+      }
+    });
+    return () => authListener.subscription.unsubscribe();
+  }, [navigate]);
 
   return (
     <>
