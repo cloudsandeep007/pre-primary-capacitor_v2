@@ -225,10 +225,16 @@ export function ParentLogin({ onLogin }: ParentLoginProps) {
             onClick={async () => {
               setLoading(true);
               try {
+                // Dynamically import Capacitor to check platform
+                const { Capacitor } = await import('@capacitor/core');
+                const redirectUrl = Capacitor.isNativePlatform()
+                  ? 'com.samsidh.preprimary://login-callback'
+                  : window.location.origin + '/parent';
+
                 const { error } = await supabase.auth.signInWithOAuth({
                   provider: 'google',
                   options: {
-                    redirectTo: window.location.origin + '/parent'
+                    redirectTo: redirectUrl
                   }
                 });
                 if (error) throw error;
