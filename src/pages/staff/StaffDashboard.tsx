@@ -17,6 +17,10 @@ import { StaffAttendancePanel } from './StaffAttendancePanel';
 import { StaffGradebookModal } from './StaffGradebookModal';
 import { StaffPerformanceTab } from './StaffPerformanceTab';
 import { StaffReportsTab } from './StaffReportsTab';
+import { studentService } from '@/services/studentService';
+import { logger } from '@/lib/logger';
+import { usePermissions } from '@/contexts/PermissionContext';
+import { showToast } from '@/components/Toast';
 
 export function normalizeClassLevel(cls?: string | null): ClassLevel | 'All' {
   if (!cls) return 'All';
@@ -36,6 +40,7 @@ interface StaffDashboardProps {
 
 export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   const { navigate } = useRouter();
+  const { can } = usePermissions();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
@@ -46,6 +51,15 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   // Main tab: class (students + gate/classroom) | announcements | homework | classwork | attendance | performance | reports
   const [mainTab, setMainTab] = useState<'class' | 'announcements' | 'homework' | 'classwork' | 'attendance' | 'performance' | 'reports'>('class');
   const [showGradebook, setShowGradebook] = useState(false);
+
+  const handleTabSwitch = (tab: typeof mainTab, requiredPerm?: string) => {
+    if (requiredPerm && !can(requiredPerm)) {
+      showToast('error', `Access Denied: You do not have permission for this feature.`);
+      return;
+    }
+    setMainTab(tab);
+  };
+
 
   const assignedClass = useMemo<ClassLevel | 'All'>(() => {
     let raw = staff.assigned_class;
@@ -102,7 +116,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   }, []);
 
   const loadTodayGatePasses = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     try {
       const { data } = await supabase
         .from('gate_passes')
@@ -128,7 +142,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   };
 
   const loadTodayLogs = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     try {
       let logsData: DailyLog[] = [];
       const { data } = await supabase
@@ -156,24 +170,11 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   const loadStudents = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('*');
-      if (error || !data || data.length === 0) {
+      const data = await studentService.fetchAllStudents();
+      if (!data || data.length === 0) {
         setStudents(getMockStudents());
       } else {
-        const mapped = data.map((d: any) => ({
-          id: d.id || String(d.roll_no || d.roll_number),
-          roll_no: String(d.roll_no || d.roll_number || '101'),
-          pin: String(d.pin || '1234'),
-          name: d.name || 'Student',
-          class_name: d.class_name || d.class || 'Nursery',
-          guardian_name: d.guardian_name,
-          parent_phone: d.parent_phone,
-          student_photo_url: d.student_photo_url,
-          parent_photo_url: d.parent_photo_url,
-        }));
-        setStudents(mapped as Student[]);
+        setStudents(data);
       }
     } catch (err) {
       console.warn('[StaffDashboard] Using mock students list');
@@ -226,7 +227,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
   const isAdmin = staff.role === 'admin' || staff.email === 'admin@school.com';
 
   return (
-    <div className="min-h-screen bg-gray-50 overflow-x-hidden w-full">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="max-w-4xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-2">
@@ -251,7 +252,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                 </button>
               )}
               <button
-                onClick={() => setShowGradebook(true)}
+                onClick={() => { if(!can('performance.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setShowGradebook(true); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-bold text-xs transition-colors shadow-sm"
                 title="Daily Gradebook"
               >
@@ -259,7 +260,13 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
                 <span>Gradebook</span>
               </button>
               <button
-                onClick={() => setShowScanner(true)}
+                onClick={() => {
+                  if (!can('gatepasses.write')) {
+                    showToast('error', 'Access Denied: You do not have permission to scan gate passes.');
+                    return;
+                  }
+                  setShowScanner(true);
+                }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors text-xs font-semibold border border-sky-200 shadow-sm"
                 title="Gate Pass QR Scanner"
               >
@@ -323,13 +330,19 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
         {/* Mobile Quick Action Buttons Bar */}
         <div className="flex sm:hidden items-center gap-2 mb-4 overflow-x-auto pb-1 no-scrollbar">
           <button
-            onClick={() => setShowScanner(true)}
+            onClick={() => {
+              if (!can('gatepasses.write')) {
+                showToast('error', 'Access Denied: You do not have permission to scan gate passes.');
+                return;
+              }
+              setShowScanner(true);
+            }}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-sky-50 text-sky-700 hover:bg-sky-100 font-bold text-xs border border-sky-200 shadow-sm whitespace-nowrap active:scale-95"
           >
             <span>📷</span> Gate Scanner
           </button>
           <button
-            onClick={() => setShowGradebook(true)}
+            onClick={() => { if(!can('performance.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setShowGradebook(true); }}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 text-white font-bold text-xs shadow-sm whitespace-nowrap active:scale-95"
           >
             <Activity size={14} /> Gradebook
@@ -347,7 +360,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
         {/* Main Tab Navigation */}
         <div className="flex gap-1.5 sm:gap-2 mb-5 overflow-x-auto pb-1.5 -mx-3.5 px-3.5 sm:mx-0 sm:px-0 no-scrollbar">
           <button
-            onClick={() => setMainTab('class')}
+            onClick={() => handleTabSwitch('class')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'class'
                 ? 'bg-gradient-to-r from-sky-500 to-teal-500 text-white shadow-md'
@@ -357,7 +370,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             <Users size={14} /> Class & Students
           </button>
           <button
-            onClick={() => setMainTab('announcements')}
+            onClick={() => handleTabSwitch('announcements', 'announcements.read')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'announcements'
                 ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md'
@@ -367,7 +380,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             <Megaphone size={14} /> Announcements
           </button>
           <button
-            onClick={() => setMainTab('homework')}
+            onClick={() => handleTabSwitch('homework', 'homework.read')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'homework'
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
@@ -377,7 +390,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             <BookOpen size={14} /> Homework
           </button>
           <button
-            onClick={() => setMainTab('classwork')}
+            onClick={() => handleTabSwitch('classwork', 'classwork.read')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'classwork'
                 ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md'
@@ -387,7 +400,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             <BookOpen size={14} /> Classwork
           </button>
           <button
-            onClick={() => setMainTab('attendance')}
+            onClick={() => handleTabSwitch('attendance', 'attendance.read')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'attendance'
                 ? 'bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-md'
@@ -397,7 +410,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             <Users size={14} /> Attendance
           </button>
           <button
-            onClick={() => setMainTab('performance')}
+            onClick={() => handleTabSwitch('performance', 'performance.read')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'performance'
                 ? 'bg-gradient-to-r from-teal-500 to-sky-500 text-white shadow-md'
@@ -407,7 +420,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             <Activity size={14} /> Performance
           </button>
           <button
-            onClick={() => setMainTab('reports')}
+            onClick={() => handleTabSwitch('reports', 'reports.read')}
             className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               mainTab === 'reports'
                 ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md'
@@ -454,7 +467,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
             {/* Activity Section Tabs */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               <button
-                onClick={() => setActivitySection('gate')}
+                onClick={() => { if(!can('gatepasses.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setActivitySection('gate'); }}
                 className={`flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
                   activitySection === 'gate'
                     ? 'bg-gradient-to-r from-sky-500 to-teal-500 text-white shadow-md'

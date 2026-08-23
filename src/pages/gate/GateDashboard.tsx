@@ -5,7 +5,12 @@ import { Staff, Student, GatePass } from '@/lib/types';
 import { Button } from '@/components/Button';
 import { showToast } from '@/components/Toast';
 import { completeMockGatePass, getMockStudents } from '@/lib/mockData';
+import { gatePassService } from '@/services/gatePassService';
+import { startNativeScanner } from '@/lib/plugins/scanner';
+import { studentService } from '@/services/studentService';
+import { logger, generateTraceId } from '@/lib/logger';
 import { Logo } from '@/components/Logo';
+import { usePermissions } from '@/contexts/PermissionContext';
 import { Camera, Search, CheckCircle2, UserCheck, ShieldCheck, LogOut } from 'lucide-react';
 
 interface GateDashboardProps {
@@ -14,6 +19,7 @@ interface GateDashboardProps {
 }
 
 export function GateDashboard({ staff, onLogout }: GateDashboardProps) {
+  const { can } = usePermissions();
   const [manualRoll, setManualRoll] = useState('');
   const [scannedResult, setScannedResult] = useState<GatePass | null>(null);
   const [matchedStudent, setMatchedStudent] = useState<Student | null>(null);
@@ -30,8 +36,20 @@ export function GateDashboard({ staff, onLogout }: GateDashboardProps) {
   }, []);
 
   const startScanner = async () => {
+    if (!can('gatepasses.write')) {
+      showToast('error', 'Access Denied: You do not have permission to use the gate scanner.');
+      return;
+    }
     if (scannedResult) return;
     try {
+      // Try native MLKit scanner first
+      const nativeResult = await startNativeScanner();
+      if (nativeResult) {
+        handleScannedQrPayload(nativeResult);
+        return; // Handled natively, no need to show web scanner UI
+      }
+
+      // Fallback: Web html5-qrcode scanner
       const html5QrCode = new Html5Qrcode('qr-reader-container');
       scannerRef.current = html5QrCode;
 
@@ -95,57 +113,10 @@ export function GateDashboard({ staff, onLogout }: GateDashboardProps) {
   const lookupStudentAndPass = async (rollNoStr: string, passId?: string) => {
     setProcessing(true);
     const cleanRoll = rollNoStr.trim();
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     try {
-      // 1. Fetch student safely by UUID or roll_no / roll_number
-      let studentData: any = null;
-      const isUuid = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(cleanRoll);
-
-      if (isUuid) {
-        const { data } = await supabase
-          .from('students')
-          .select('*')
-          .eq('id', cleanRoll)
-          .maybeSingle();
-        if (data) studentData = data;
-      }
-
-      if (!studentData) {
-        let res = await supabase
-          .from('students')
-          .select('*')
-          .or(`roll_no.eq.${cleanRoll},roll_number.eq.${cleanRoll}`)
-          .maybeSingle();
-
-        if (res.error || !res.data) {
-          res = await supabase
-            .from('students')
-            .select('*')
-            .eq('roll_no', cleanRoll)
-            .maybeSingle();
-        }
-
-        if (!res.error && res.data) {
-          studentData = res.data;
-        }
-      }
-
-      let targetStudent: Student | null = null;
-      if (studentData) {
-        targetStudent = {
-          id: studentData.id || String(studentData.roll_no || studentData.roll_number),
-          roll_no: String(studentData.roll_no || studentData.roll_number || cleanRoll),
-          pin: String(studentData.pin || '1234'),
-          name: studentData.name || 'Student',
-          class_name: studentData.class_name || studentData.class || 'Nursery',
-          guardian_name: studentData.guardian_name,
-          parent_phone: studentData.parent_phone,
-          student_photo_url: studentData.student_photo_url,
-          parent_photo_url: studentData.parent_photo_url,
-        };
-      } else {
-        targetStudent = getMockStudents().find((s) => s.roll_no === cleanRoll || s.id === cleanRoll) || null;
-      }
+      // 1. Fetch student safely via service
+      const targetStudent = await studentService.findStudentByRollOrId(cleanRoll);
 
       if (!targetStudent) {
         showToast('error', `No student found with Roll #${cleanRoll}`);
@@ -156,17 +127,11 @@ export function GateDashboard({ staff, onLogout }: GateDashboardProps) {
 
       setMatchedStudent(targetStudent);
 
-      // 2. Fetch pass from Supabase (latest for today)
-      const { data: passesData } = await supabase
-        .from('gate_passes')
-        .select('*')
-        .or(`roll_no.eq.${cleanRoll},student_id.eq.${targetStudent.id}`)
-        .eq('pass_date', today)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      // 2. Fetch pass from Supabase (latest for today) via service
+      const latestPass = await gatePassService.fetchLatestPassForStudent(targetStudent.id, targetStudent.roll_no, today);
 
-      if (passesData && passesData.length > 0) {
-        setScannedResult(passesData[0] as GatePass);
+      if (latestPass) {
+        setScannedResult(latestPass);
       } else {
         // Fallback pass state
         setScannedResult({
@@ -193,58 +158,19 @@ export function GateDashboard({ staff, onLogout }: GateDashboardProps) {
     if (!matchedStudent || !scannedResult) return;
 
     setProcessing(true);
+    const traceId = generateTraceId();
+    logger.info('GATE_PASS_APPROVAL_STARTED', { studentId: matchedStudent.id, traceId });
     const nowIso = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
 
     // Always update local storage (never duplicate)
     completeMockGatePass(scannedResult.id || matchedStudent.roll_no, staff.name);
 
-    // Sync to Supabase — strict UPDATE first, INSERT only if no record exists
+    // Sync to Supabase via service
     try {
-      let existingId: string | undefined =
-        scannedResult.id && !scannedResult.id.startsWith('pass-') ? scannedResult.id : undefined;
-
-      if (!existingId) {
-        const { data: existingRows } = await supabase
-          .from('gate_passes')
-          .select('id')
-          .or(`roll_no.eq.${matchedStudent.roll_no},student_id.eq.${matchedStudent.id}`)
-          .eq('pass_date', today)
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (existingRows && existingRows.length > 0) {
-          existingId = existingRows[0].id;
-        }
-      }
-
-      const updateFields = {
-        status: 'COMPLETED',
-        pickup_time: nowIso,
-        approved_by_staff: staff.name,
-        student_photo_url: matchedStudent.student_photo_url,
-        parent_photo_url: matchedStudent.parent_photo_url,
-      };
-
-      if (existingId) {
-        const { error } = await supabase
-          .from('gate_passes')
-          .update(updateFields)
-          .eq('id', existingId);
-        if (error) console.warn('[GateDashboard] UPDATE error:', error.message);
-      } else {
-        const { error } = await supabase.from('gate_passes').insert({
-          student_id: matchedStudent.id,
-          roll_no: matchedStudent.roll_no,
-          student_name: matchedStudent.name,
-          class_name: matchedStudent.class_name,
-          pass_date: today,
-          ...updateFields,
-        });
-        if (error) console.warn('[GateDashboard] INSERT error:', error.message);
-      }
+      await gatePassService.approveHandover(matchedStudent, staff.name, scannedResult.id, traceId);
+      logger.info('GATE_PASS_APPROVAL_SUCCESS', { studentId: matchedStudent.id, traceId });
     } catch (err) {
-      console.warn('[GateDashboard] Supabase sync exception');
+      logger.error('GATE_PASS_APPROVAL_FAILED', { error: err instanceof Error ? err.message : String(err), studentId: matchedStudent.id, traceId });
     }
 
     setScannedResult((prev) =>

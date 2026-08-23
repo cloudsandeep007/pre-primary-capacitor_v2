@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { X, Save, Camera, Video, Plus, Loader2, Play } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { storageService } from '@/services/storageService';
 import { Staff, Student, DailyLogInput, MealStatus, NapStatus, MoodStatus, MediaItem } from '@/lib/types';
 import { MEAL_OPTIONS, NAP_OPTIONS, MOOD_OPTIONS } from '@/lib/constants';
 import { Button } from '@/components/Button';
 import { showToast } from '@/components/Toast';
 import { addMockLog } from '@/lib/mockData';
+import { logger, generateTraceId } from '@/lib/logger';
+import { activityService } from '@/services/activityService';
 
 interface ActivityFormModalProps {
   student: Student;
@@ -79,11 +82,15 @@ export function ActivityFormModal({ student, staff, onClose, onSaved }: Activity
     }
 
     setSaving(true);
+    const traceId = generateTraceId();
+    logger.info('ACTIVITY_SAVE_STARTED', { studentId: student.id, traceId });
+
     try {
       const uploadedItems: MediaItem[] = [];
 
       if (mediaItems.length > 0) {
         setUploading(true);
+        logger.info('ACTIVITY_PHOTO_UPLOAD_STARTED', { count: mediaItems.length, traceId });
         for (const item of mediaItems) {
           let finalUrl = item.preview;
           if (item.file) {
@@ -91,28 +98,27 @@ export function ActivityFormModal({ student, staff, onClose, onSaved }: Activity
             try {
               const fileExt = item.file.name.split('.').pop();
               const fileName = `${student.id}/${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-              const { error: uploadError } = await supabase.storage
-                .from('child-photos')
-                .upload(fileName, item.file, { cacheControl: '3600', upsert: false });
+              const { url, error: uploadError } = await storageService.uploadFileWithName('child-photos', fileName, item.file, traceId);
 
-              if (!uploadError) {
-                const { data: urlData } = supabase.storage
-                  .from('child-photos')
-                  .getPublicUrl(fileName);
-                if (urlData?.publicUrl) {
-                  finalUrl = urlData.publicUrl;
-                  uploaded = true;
-                }
+              if (!uploadError && url) {
+                finalUrl = url;
+                uploaded = true;
+                logger.info('ACTIVITY_PHOTO_UPLOAD_SUCCESS', { fileName, traceId });
+              } else {
+                logger.warn('ACTIVITY_PHOTO_UPLOAD_FAILED', { error: uploadError, fileName, traceId });
               }
-            } catch (e) {
-              console.warn('[ActivityFormModal] Storage upload fallback to Base64');
+            } catch (err) {
+              logger.warn('ACTIVITY_PHOTO_UPLOAD_FAILED', { error: err instanceof Error ? err.message : String(err), traceId });
             }
 
             if (!uploaded) {
               try {
                 finalUrl = await readFileAsDataUrl(item.file);
               } catch (err) {
-                console.warn('[ActivityFormModal] Base64 conversion failed');
+                logger.warn('BASE64_CONVERSION_FAILED', { 
+                  error: err instanceof Error ? err.message : String(err),
+                  studentId: student.id 
+                });
               }
             }
           }
@@ -136,7 +142,7 @@ export function ActivityFormModal({ student, staff, onClose, onSaved }: Activity
         teacher_notes: note.trim() || null,
         photo_url: firstPhoto,
         media_items: uploadedItems,
-        log_date: new Date().toISOString().split('T')[0],
+        log_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       };
 
       // Always save to local mock storage so ParentFeed reflects it instantly in all scenarios
@@ -149,31 +155,27 @@ export function ActivityFormModal({ student, staff, onClose, onSaved }: Activity
         teacher_notes: note.trim() || null,
         photo_url: firstPhoto,
         media_items: uploadedItems,
-        log_date: new Date().toISOString().split('T')[0],
+        log_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       });
 
-      // Also sync to Supabase (attempting with media_items first, falling back without if column is missing)
+      // Also sync to Supabase via the service
       try {
-        let { error: insertError } = await supabase
-          .from('daily_logs')
-          .insert(logEntry);
-        
-        if (insertError) {
-          console.warn('[ActivityFormModal] daily_logs insert error, retrying without media_items:', insertError.message);
-          const { media_items, ...rest } = logEntry;
-          const retry1 = await supabase.from('daily_logs').insert(rest);
-          if (retry1.error) {
-            await supabase.from('activity_logs').insert(logEntry);
-          }
-        }
+        logger.info('ACTIVITY_DB_INSERT_STARTED', { studentId: student.id, traceId });
+        await activityService.createLog(logEntry, traceId);
+        logger.info('ACTIVITY_DB_INSERT_SUCCESS', { studentId: student.id, traceId });
       } catch (err) {
-        console.warn('[ActivityFormModal] Supabase insert exception:', err);
+        // Error already logged in service, but we can do a local info log if needed
+        logger.error('ACTIVITY_DB_INSERT_FAILED', { error: err instanceof Error ? err.message : String(err), studentId: student.id, traceId });
       }
 
       showToast('success', `Activity logged for ${student.name}!`);
       onSaved();
     } catch (err) {
-      console.error('[ActivityFormModal] Save failed:', err);
+      logger.error('ACTIVITY_SAVE_FAILED', { 
+        error: err instanceof Error ? err.message : String(err),
+        studentId: student.id,
+        traceId
+      });
       showToast('error', 'Could not save activity. Please try again.');
     } finally {
       setSaving(false);

@@ -1,5 +1,8 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { RouterProvider, useRouter } from '@/lib/router';
+import { initializeDeepLinking } from '@/lib/plugins/app';
+import { initializePushNotifications } from '@/lib/plugins/notifications';
+import { supabase } from '@/lib/supabase';
 import { ToastContainer } from '@/components/Toast';
 import { FullScreenSpinner } from '@/components/Spinner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -12,6 +15,7 @@ const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard').then(m 
 const GatePortal = lazy(() => import('@/pages/gate/GatePortal').then(m => ({ default: m.GatePortal })));
 const StaffOnboarding = lazy(() => import('@/pages/staff/StaffOnboarding').then(m => ({ default: m.StaffOnboarding })));
 const ParentOnboarding = lazy(() => import('@/pages/parent/ParentOnboarding').then(m => ({ default: m.ParentOnboarding })));
+const DiagnosticsPage = lazy(() => import('@/pages/diagnostics/DiagnosticsPage').then(m => ({ default: m.DiagnosticsPage })));
 
 function AppContent() {
   const { route } = useRouter();
@@ -27,12 +31,31 @@ function AppContent() {
         <ErrorBoundary name="GatePortal">{route === '/gate' && <GatePortal />}</ErrorBoundary>
         <ErrorBoundary name="StaffOnboarding">{route === '/onboarding/staff' && <StaffOnboarding />}</ErrorBoundary>
         <ErrorBoundary name="ParentOnboarding">{route === '/onboarding/parent' && <ParentOnboarding />}</ErrorBoundary>
+        <ErrorBoundary name="DiagnosticsPage">{route === '/system-core' && <DiagnosticsPage />}</ErrorBoundary>
       </Suspense>
     </>
   );
 }
 
 function App() {
+  useEffect(() => {
+    initializeDeepLinking();
+
+    // Listen for auth state changes globally to register for push notifications
+    // once the user is authenticated.
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Example role mapping, you might want to fetch actual role
+        const role = session.user.user_metadata?.role || 'user';
+        initializePushNotifications(session.user.id, role);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <RouterProvider>
       <AppContent />

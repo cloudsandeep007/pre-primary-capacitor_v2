@@ -1,26 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { UserCheck, Check, X, Clock, Loader2, Users, Save, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-
-interface Staff {
-  id: string;
-  name: string;
-  role: string;
-}
-
-interface Student {
-  id: string;
-  name: string;
-  class_name: string;
-}
-
-interface Attendance {
-  id: string;
-  student_id: string;
-  class_name: string;
-  date: string;
-  status: 'present' | 'absent' | 'late';
-}
+import { studentService } from '@/services/studentService';
+import { attendanceService } from '@/services/attendanceService';
+import { Student, Attendance, Staff } from '../../lib/types';
+import { logger, generateTraceId } from '@/lib/logger';
 
 interface StaffAttendancePanelProps {
   staff: Staff;
@@ -35,37 +19,26 @@ export function StaffAttendancePanel({ staff, assignedClass, onBack }: StaffAtte
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Fetch students in this class
-      const { data: studentsData, error: studentsError } = await supabase
-        .from('students')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .order('name');
+      // Fetch students in this class via service
+      const studentsData = await studentService.fetchAllStudents(assignedClass);
 
-      if (studentsError) throw studentsError;
-      setStudents(studentsData || []);
+      setStudents(studentsData.sort((a, b) => a.name.localeCompare(b.name)));
 
-      // Fetch attendance for this class and date
-      const { data: attendanceData, error: attendanceError } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .eq('date', selectedDate);
-
-      if (attendanceError) throw attendanceError;
+      // Fetch attendance via service
+      const attendanceData = await attendanceService.fetchAttendanceByClassAndDate(assignedClass, selectedDate);
 
       const recordsMap: Record<string, Attendance> = {};
-      attendanceData?.forEach(record => {
+      attendanceData.forEach(record => {
         recordsMap[record.student_id] = record;
       });
       setAttendanceRecords(recordsMap);
     } catch (error) {
-      console.error('Error fetching attendance data:', error);
+      logger.error('ERROR_FETCHING_ATTENDANCE_DATA', { error: error instanceof Error ? error.message : String(error) });
     } finally {
       setLoading(false);
     }
@@ -76,7 +49,7 @@ export function StaffAttendancePanel({ staff, assignedClass, onBack }: StaffAtte
 
     const subscription = supabase
       .channel('attendance_changes')
-      .on('postgres', { event: '*', schema: 'public', table: 'attendance', filter: `class_name=eq.${assignedClass}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance', filter: `class_name=eq.${assignedClass}` }, () => {
         fetchData();
       })
       .subscribe();
@@ -104,29 +77,24 @@ export function StaffAttendancePanel({ staff, assignedClass, onBack }: StaffAtte
 
   const handleSave = async () => {
     setSaving(true);
+    const traceId = generateTraceId();
+    logger.info('ATTENDANCE_SAVE_STARTED', { count: Object.keys(attendanceRecords).length, traceId });
+
     try {
       for (const r of Object.values(attendanceRecords)) {
-        if (r.id !== 'temp-id') {
-          await supabase.from('attendance').update({ status: r.status }).eq('id', r.id);
-        } else {
-          const { data } = await supabase.from('attendance').insert([{
-            student_id: r.student_id,
-            class_name: assignedClass,
-            date: selectedDate,
-            status: r.status
-          }]).select();
-          if (data && data[0]) {
-            r.id = data[0].id;
-          }
+        const { data } = await attendanceService.saveAttendanceRecord(r, traceId);
+        if (r.id === 'temp-id' && data && data[0]) {
+          r.id = data[0].id;
         }
       }
+      logger.info('ATTENDANCE_SAVE_SUCCESS', { traceId });
       setSuccessMsg('Saved successfully');
       setTimeout(() => {
         setSuccessMsg(null);
         onBack?.();
       }, 1500);
     } catch (error) {
-      console.error('Error saving attendance:', error);
+      logger.error('ATTENDANCE_SAVE_FAILED', { error: error instanceof Error ? error.message : String(error), traceId });
     } finally {
       setSaving(false);
     }

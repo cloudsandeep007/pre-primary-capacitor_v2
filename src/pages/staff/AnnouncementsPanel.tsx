@@ -1,29 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Staff } from '@/lib/types';
-import { Megaphone, Send, ChevronDown, ChevronUp, Plus, MessageCircle } from 'lucide-react';
+import { Staff, Announcement, AnnouncementReply } from '@/lib/types';
+import { announcementService } from '@/services/announcementService';
+import { Megaphone, Send, ChevronDown, ChevronUp, Plus, MessageCircle, Edit2, Trash2 } from 'lucide-react';
 import { showToast } from '@/components/Toast';
-
-interface Announcement {
-  id: string;
-  title: string;
-  body: string;
-  image_url: string | null;
-  created_at: string;
-  class_name: string;
-  replies?: Reply[];
-}
-
-interface Reply {
-  id: string;
-  announcement_id: string;
-  sender_type: string;
-  sender_name: string;
-  body: string;
-  created_at: string;
-}
+import { usePermissions } from '@/contexts/PermissionContext';
+import { logger, generateTraceId } from '@/lib/logger';
 
 export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; assignedClass: string }) {
+  const { can } = usePermissions();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [title, setTitle] = useState('');
@@ -31,6 +16,7 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
   const [imageUrl, setImageUrl] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAnnouncements();
@@ -52,32 +38,36 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
   }, [assignedClass]);
 
   const fetchAnnouncements = async () => {
-    try {
-      const { data: annData, error: annError } = await supabase
-        .from('announcements')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .order('created_at', { ascending: false });
-
-      if (annError) throw annError;
-
-      const { data: repliesData, error: repliesError } = await supabase
-        .from('announcement_replies')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (repliesError) throw repliesError;
-
-      const formatted = (annData || []).map(ann => ({
+    const data = await announcementService.fetchAnnouncements(assignedClass);
+    if (data.length > 0) {
+      const repliesMap = await announcementService.fetchReplies(data.map(a => a.id));
+      const merged = data.map(ann => ({
         ...ann,
-        replies: (repliesData || []).filter((r: Reply) => r.announcement_id === ann.id)
+        replies: repliesMap[ann.id] || []
       }));
-
-      setAnnouncements(formatted);
-    } catch (error) {
-      console.error('Error fetching announcements:', error);
+      setAnnouncements(merged);
+    } else {
       setAnnouncements([]);
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this announcement?')) return;
+    const success = await announcementService.deleteAnnouncement(id);
+    if (success) {
+      showToast('success', 'Announcement deleted');
+      fetchAnnouncements();
+    } else {
+      showToast('error', 'Failed to delete announcement');
+    }
+  };
+
+  const handleEdit = (ann: Announcement) => {
+    setEditingId(ann.id);
+    setTitle(ann.title);
+    setBody(ann.body || '');
+    setImageUrl(ann.image_url || '');
+    setShowNewForm(true);
   };
 
   const handlePost = async (e: React.FormEvent) => {
@@ -87,43 +77,53 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
       return;
     }
 
-    try {
-      const newAnn: Announcement = {
-        id: `local-${Date.now()}`,
-        title,
-        body,
-        image_url: imageUrl || null,
-        created_at: new Date().toISOString(),
-        class_name: assignedClass,
-        replies: []
-      };
+    const traceId = generateTraceId();
 
-      try {
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-        await Promise.race([
-          supabase.from('announcements').insert({
-            title,
-            body,
-            image_url: imageUrl || null,
-            class_name: assignedClass,
-            staff_id: staff.id,
-            staff_name: staff.name
-          }),
-          timeout
-        ]);
-      } catch (e) {
-        console.warn('Supabase insert failed/timed out. Using local state.', e);
+    try {
+      if (editingId) {
+        logger.info('ANNOUNCEMENT_UPDATE_STARTED', { traceId });
+        const success = await announcementService.updateAnnouncement(editingId, { title, body, image_url: imageUrl || null });
+        if (!success) throw new Error('Update failed');
+        logger.info('ANNOUNCEMENT_UPDATE_SUCCESS', { traceId });
+        showToast('success', 'Announcement updated successfully');
+      } else {
+        logger.info('ANNOUNCEMENT_CREATE_STARTED', { traceId });
+        const newAnn: Announcement = {
+          id: `local-${Date.now()}`,
+          title,
+          body,
+          image_url: imageUrl || null,
+          created_at: new Date().toISOString(),
+          class_name: assignedClass,
+          replies: [],
+          staff_id: staff.id,
+          staff_name: staff.name
+        };
+
+        const { error: e } = await announcementService.createAnnouncement({
+          id: newAnn.id,
+          title,
+          body,
+          image_url: imageUrl || null,
+          class_name: assignedClass,
+          staff_id: staff.id,
+          staff_name: staff.name
+        }, traceId);
+        
+        if (e) throw e;
+        logger.info('ANNOUNCEMENT_CREATE_SUCCESS', { traceId });
+        showToast('success', 'Announcement posted successfully');
       }
 
-      setAnnouncements([newAnn, ...announcements]);
-      showToast('success', 'Announcement posted successfully');
+      fetchAnnouncements();
       setTitle('');
       setBody('');
       setImageUrl('');
+      setEditingId(null);
       setShowNewForm(false);
     } catch (error) {
-      console.error('Error posting announcement:', error);
-      showToast('error', 'Failed to post announcement');
+      logger.error('ANNOUNCEMENT_CREATE_FAILED', { error: error instanceof Error ? error.message : String(error), traceId });
+      showToast('error', 'Failed to post/update announcement');
     }
   };
 
@@ -131,28 +131,22 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
     if (!replyText.trim()) return;
 
     try {
-      try {
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-        await Promise.race([
-          supabase.from('announcement_replies').insert({
-            announcement_id: announcementId,
-            sender_type: 'teacher',
-            sender_name: staff.name,
-            body: replyText.trim()
-          }),
-          timeout
-        ]);
-      } catch (e) {
-        console.warn('Supabase insert failed/timed out. Using local state.', e);
-      }
+      const { error: e } = await announcementService.createReply({
+        announcement_id: announcementId,
+        sender_type: 'teacher',
+        sender_name: staff.name,
+        body: replyText.trim()
+      });
+      if (e) throw e;
 
-      const newReply: Reply = {
+      const newReply: AnnouncementReply = {
         id: `local-reply-${Date.now()}`,
         announcement_id: announcementId,
         sender_type: 'teacher',
         sender_name: staff.name,
         body: replyText.trim(),
         created_at: new Date().toISOString(),
+        student_id: null,
       };
       
       setAnnouncements(prev => prev.map(ann => {
@@ -165,7 +159,7 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
       setReplyText('');
       showToast('success', 'Reply sent');
     } catch (error) {
-      console.error('Error sending reply:', error);
+      logger.error('ERROR_SENDING_REPLY', { error: error instanceof Error ? error.message : String(error) });
       showToast('error', 'Failed to send reply');
     }
   };
@@ -177,13 +171,13 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
           <Megaphone className="w-8 h-8" />
           <h2 className="text-2xl font-bold">Announcements</h2>
         </div>
-        <button
+        {can('announcements.write') && (<button
           onClick={() => setShowNewForm(!showNewForm)}
           className="flex items-center px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-2xl shadow-md hover:from-violet-600 hover:to-fuchsia-600 transition-all font-medium"
         >
           <Plus className="w-5 h-5 mr-1" />
           New Announcement
-        </button>
+        </button>)}
       </div>
 
       {showNewForm && (
@@ -217,40 +211,52 @@ export function AnnouncementsPanel({ staff, assignedClass }: { staff: Staff; ass
               placeholder="https://example.com/image.jpg"
             />
           </div>
-          <div className="flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={() => setShowNewForm(false)}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-violet-600 text-white rounded-xl shadow-md hover:bg-violet-700 transition-colors font-medium"
-            >
-              Post Announcement
-            </button>
-          </div>
-        </form>
-      )}
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => { setShowNewForm(false); setEditingId(null); setTitle(''); setBody(''); setImageUrl(''); }}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white rounded-xl shadow-md hover:from-violet-600 hover:to-fuchsia-600 transition-all font-medium"
+              >
+                {editingId ? 'Update' : 'Post'} Announcement
+              </button>
+            </div>
+          </form>
+        )}
 
-      <div className="space-y-4">
-        {announcements.length === 0 ? (
-          <div className="text-center py-10 bg-white rounded-2xl border border-gray-100">
-            <Megaphone className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No announcements yet</p>
-          </div>
-        ) : (
-          announcements.map((ann) => (
-            <div key={ann.id} className="bg-white rounded-2xl shadow-sm border border-violet-100 overflow-hidden">
-              <div className="p-5">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-xl font-bold text-gray-800">{ann.title}</h3>
-                  <span className="text-sm text-gray-500 bg-gray-50 px-2 py-1 rounded-md">
-                    {new Date(ann.created_at).toLocaleDateString()}
-                  </span>
-                </div>
+        <div className="space-y-4">
+          {announcements.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-violet-200">
+              <Megaphone className="w-12 h-12 text-violet-200 mx-auto mb-3" />
+              <p className="text-gray-500 font-medium">No announcements yet</p>
+            </div>
+          ) : (
+            announcements.map((ann) => (
+              <div key={ann.id} className="bg-white rounded-2xl shadow-sm border border-violet-100 overflow-hidden">
+                <div className="p-5">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-xl font-bold text-gray-800">{ann.title}</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500 bg-gray-50 px-2 py-1 rounded-md">
+                        {new Date(ann.created_at).toLocaleDateString()}
+                      </span>
+                      {can('announcements.write') && (
+                        <button onClick={() => handleEdit(ann)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-md transition-colors" title="Edit Announcement">
+                          <Edit2 size={16} />
+                        </button>
+                      )}
+                      {can('announcements.delete') && (
+                        <button onClick={() => handleDelete(ann.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors" title="Delete Announcement">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 <p className="text-gray-600 whitespace-pre-wrap mb-4">{ann.body}</p>
                 {ann.image_url && (
                   <img src={ann.image_url} alt="Announcement" className="rounded-xl max-h-64 object-cover mb-4" />

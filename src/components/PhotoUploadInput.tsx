@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
-import { Camera, Upload, Check, RefreshCw, X, Image as ImageIcon } from 'lucide-react';
+import { Camera, Upload, X, Check, ImageIcon, RefreshCw } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { storageService } from '@/services/storageService';
+import { capturePhotoNative } from '@/lib/plugins/camera';
 
 interface PhotoUploadInputProps {
   label: string;
@@ -48,21 +50,12 @@ export function PhotoUploadInput({
         const dataUrl = evt.target?.result as string;
         // Optionally upload to Supabase Storage bucket 'child-photos' if available
         try {
-          const fileName = `upload-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-          const { data, error } = await supabase.storage
-            .from('child-photos')
-            .upload(fileName, file, { upsert: true });
+          const { url, error } = await storageService.uploadFile('child-photos', file);
 
-          if (!error && data) {
-            const { data: publicUrlData } = supabase.storage
-              .from('child-photos')
-              .getPublicUrl(fileName);
-
-            if (publicUrlData?.publicUrl) {
-              onChange(publicUrlData.publicUrl);
-              setUploading(false);
-              return;
-            }
+          if (!error && url) {
+            onChange(url);
+            setUploading(false);
+            return;
           }
         } catch (storageErr) {
           console.warn('[PhotoUploadInput] Supabase storage upload skipped, using dataUrl');
@@ -79,6 +72,14 @@ export function PhotoUploadInput({
   };
 
   const startWebcam = async () => {
+    // Try native camera first
+    const nativePhoto = await capturePhotoNative();
+    if (nativePhoto) {
+      onChange(nativePhoto);
+      return; // If native worked, we're done. No need to show web modal.
+    }
+
+    // Fallback for Web: Show modal and request getUserMedia
     setShowWebcam(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({

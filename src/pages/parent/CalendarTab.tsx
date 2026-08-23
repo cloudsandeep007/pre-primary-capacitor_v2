@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Student } from '@/lib/types';
+import { Student, HomeworkItem } from '@/lib/types';
+import { homeworkService } from '@/services/homeworkService';
 import { ChevronLeft, ChevronRight, Calendar, BookOpen, Star, AlertCircle } from 'lucide-react';
 
 interface SchoolEvent {
@@ -11,13 +12,6 @@ interface SchoolEvent {
   description?: string;
 }
 
-interface Homework {
-  id: string;
-  title: string;
-  due_date: string;
-  subject: string;
-}
-
 interface CalendarTabProps {
   student: Student;
 }
@@ -25,7 +19,7 @@ interface CalendarTabProps {
 export function CalendarTab({ student }: CalendarTabProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<SchoolEvent[]>([]);
-  const [homeworks, setHomeworks] = useState<Homework[]>([]);
+  const [homeworks, setHomeworks] = useState<HomeworkItem[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
 
@@ -41,22 +35,17 @@ export function CalendarTab({ student }: CalendarTabProps) {
     const startStr = startOfMonth.toISOString().split('T')[0];
     const endStr = endOfMonth.toISOString().split('T')[0];
 
-    const [eventsRes, hwRes] = await Promise.all([
+    const [eventsRes, hwData] = await Promise.all([
       supabase
         .from('school_events')
         .select('*')
         .gte('date', startStr)
         .lte('date', endStr),
-      supabase
-        .from('homework')
-        .select('*')
-        .eq('class_name', student.class_name)
-        .gte('due_date', startStr)
-        .lte('due_date', endStr)
+      homeworkService.fetchHomework(student.class_name, startStr, endStr)
     ]);
 
     if (!eventsRes.error) setEvents(eventsRes.data || []);
-    if (!hwRes.error) setHomeworks(hwRes.data || []);
+    setHomeworks(hwData);
     
     setLoading(false);
   };
@@ -77,7 +66,7 @@ export function CalendarTab({ student }: CalendarTabProps) {
     const firstDay = getFirstDayOfMonth(year, month);
     const days = [];
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     const selDateStr = selectedDate.toISOString().split('T')[0];
 
     for (let i = 0; i < firstDay; i++) {

@@ -1,45 +1,28 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { ReactNode } from 'react';
+import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 
-export type Route = '/' | '/staff' | '/parent' | '/admin' | '/gate' | '/onboarding/staff' | '/onboarding/parent';
-
-interface RouterContextValue {
-  route: Route;
-  navigate: (to: Route) => void;
-}
-
-const RouterContext = createContext<RouterContextValue | null>(null);
-
-function getRouteFromHash(): Route {
-  const hash = window.location.hash.replace('#', '');
-  if (hash === '/staff') return '/staff';
-  if (hash === '/parent') return '/parent';
-  if (hash === '/admin') return '/admin';
-  if (hash === '/gate') return '/gate';
-  if (hash === '/onboarding/staff') return '/onboarding/staff';
-  if (hash === '/onboarding/parent') return '/onboarding/parent';
-  return '/';
-}
+export type Route = '/' | '/staff' | '/parent' | '/admin' | '/gate' | '/onboarding/staff' | '/onboarding/parent' | '/system-core';
 
 export function RouterProvider({ children }: { children: ReactNode }) {
-  const [route, setRoute] = useState<Route>(getRouteFromHash());
-
-  useEffect(() => {
-    const onHashChange = () => setRoute(getRouteFromHash());
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-
-  const navigate = (to: Route) => {
-    window.location.hash = to;
-    setRoute(to);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  return <RouterContext.Provider value={{ route, navigate }}>{children}</RouterContext.Provider>;
+  // We use HashRouter because it works seamlessly on web and inside Capacitor 
+  // without needing complex deep-linking/server configuration for simple routing.
+  return <HashRouter>{children}</HashRouter>;
 }
 
 export function useRouter() {
-  const ctx = useContext(RouterContext);
-  if (!ctx) throw new Error('useRouter must be used within RouterProvider');
-  return ctx;
+  const navigateBase = useNavigate();
+  const location = useLocation();
+
+  const navigate = (to: Route) => {
+    navigateBase(to);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Ensure the route conforms to our Route type for App.tsx conditional rendering
+  const currentRoute = (location.pathname === '/' ? '/' : location.pathname) as Route;
+
+  return {
+    route: currentRoute,
+    navigate
+  };
 }

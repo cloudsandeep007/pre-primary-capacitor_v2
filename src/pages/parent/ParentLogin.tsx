@@ -4,10 +4,12 @@ import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import { Student } from '@/lib/types';
 import { getMockStudents } from '@/lib/mockData';
+import { studentService } from '@/services/studentService';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
+import { logger, generateTraceId } from '@/lib/logger';
 
 interface ParentLoginProps {
   onLogin: (student: Student) => void;
@@ -35,37 +37,39 @@ export function ParentLogin({ onLogin }: ParentLoginProps) {
     }
 
     setLoading(true);
+    await supabase.auth.signOut();
+    const traceId = generateTraceId();
+    logger.info('LOGIN_STARTED', { rollNumber: roll, traceId });
+
     try {
       let studentAccount: Student | null = null;
+      let isAuthenticated = false;
+      const formattedEmail = `parent_${roll}@samsidh.local`;
 
+      // PHASE 3: Attempt Supabase Auth First
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password: pinVal,
+      });
+
+      if (!authError && authData.session) {
+        isAuthenticated = true;
+      }
+
+      // Legacy fallback logic
       try {
         const timeout = new Promise<null>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 3000)
         );
-        const query = supabase
-          .from('students')
-          .select('*')
-          .eq('roll_no', roll)
-          .maybeSingle();
+        const query = studentService.findStudentByRollOrId(roll);
 
-        const res = await Promise.race([query, timeout]) as Awaited<typeof query>;
+        const res = await Promise.race([query, timeout]);
 
-        if (!res.error && res.data) {
-          const d = res.data;
-          studentAccount = {
-            id: d.id || String(d.roll_no),
-            roll_no: String(d.roll_no || roll),
-            pin: String(d.pin || ''),
-            name: d.name || 'Student',
-            class_name: d.class_name || d.class || 'Nursery',
-            guardian_name: d.guardian_name || '',
-            parent_phone: d.parent_phone || d.parent_mobile || '',
-            student_photo_url: d.student_photo_url || d.photo_url || '',
-            parent_photo_url: d.parent_photo_url || '',
-          };
+        if (res) {
+          studentAccount = res;
         }
       } catch (err) {
-        console.warn('[ParentLogin] Supabase unavailable or timed out, using demo data');
+        logger.warn('SUPABASE_UNAVAILABLE', { error: err instanceof Error ? err.message : String(err), rollNumber: roll });
       }
 
       if (!studentAccount) {
@@ -78,15 +82,31 @@ export function ParentLogin({ onLogin }: ParentLoginProps) {
         return;
       }
 
-      if (studentAccount.pin !== pinVal) {
-        showToast('error', 'Incorrect PIN. Please try again.');
-        return;
+      // PHASE 3: Fallback verification
+      if (!isAuthenticated) {
+        if (studentAccount.pin === pinVal) {
+          isAuthenticated = true;
+          // Silent shadow migration: sync PIN to Supabase Auth password
+          try {
+            const { error: seedError } = await supabase.auth.signInWithPassword({ email: formattedEmail, password: 'Samsidh@123' });
+            if (!seedError) await supabase.auth.updateUser({ password: pinVal });
+          } catch(e) { /* ignore */ }
+        } else {
+          logger.info('LOGIN_FAILED', { reason: 'Incorrect PIN', rollNumber: roll, traceId });
+          showToast('error', 'Incorrect PIN. Please try again.');
+          return;
+        }
       }
 
+      logger.info('LOGIN_SUCCESS', { rollNumber: roll, traceId });
       showToast('success', `Welcome! Viewing ${studentAccount.name}'s report.`);
       onLogin(studentAccount);
     } catch (err) {
-      console.error('[ParentLogin] Login failed:', err);
+      logger.error('LOGIN_FAILED', { 
+        error: err instanceof Error ? err.message : String(err),
+        rollNumber: roll,
+        traceId
+      });
       showToast('error', 'Could not sign in. Please check your connection and try again.');
     } finally {
       setLoading(false);

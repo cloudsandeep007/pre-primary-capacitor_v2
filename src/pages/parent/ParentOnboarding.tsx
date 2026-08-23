@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, User, Phone, KeyRound, Hash, Heart, ShieldCheck } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
+import { studentService } from '@/services/studentService';
 import { ClassLevel, Student } from '@/lib/types';
 import { Logo } from '@/components/Logo';
 import { Button } from '@/components/Button';
@@ -9,6 +10,7 @@ import { Spinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
 import { PhotoUploadInput } from '@/components/PhotoUploadInput';
 import { addMockStudent } from '@/lib/mockData';
+import { logger, generateTraceId } from '@/lib/logger';
 
 interface ParentOnboardingProps {
   onSuccessLogin?: (student: Student) => void;
@@ -43,14 +45,12 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
 
     setSubmitting(true);
     const cleanRoll = rollNo.trim();
+    const traceId = generateTraceId();
+    logger.info('PARENT_ONBOARDING_STARTED', { rollNo: cleanRoll, traceId });
 
     try {
       // 1. Check if student with roll_no exists
-      const { data: existingStudent } = await supabase
-        .from('students')
-        .select('id')
-        .or(`roll_no.eq.${cleanRoll},roll_number.eq.${cleanRoll}`)
-        .maybeSingle();
+      const existingStudent = await studentService.findStudentByRollOrId(cleanRoll);
 
       if (existingStudent) {
         showToast('error', `Roll #${cleanRoll} is already registered. Please check the roll number.`);
@@ -58,7 +58,7 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
         return;
       }
 
-      // 2. Insert into Supabase with clean schema keys
+      // 2. Insert into Supabase via service
       const primaryPayload = {
         name: studentName.trim(),
         roll_no: cleanRoll,
@@ -70,61 +70,13 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
         parent_photo_url: parentPhotoUrl.trim(),
       };
 
-      let inserted: any = null;
-      let insertErr: any = null;
+      let createdStudentObj = await studentService.createStudent(primaryPayload, traceId);
 
-      const res1 = await supabase
-        .from('students')
-        .insert(primaryPayload)
-        .select()
-        .single();
-
-      inserted = res1.data;
-      insertErr = res1.error;
-
-      // Fallback payload if column names vary in older database instances
-      if (insertErr) {
-        console.warn('[ParentOnboarding] Primary insert failed, retrying legacy schema keys:', insertErr.message);
-        const legacyPayload = {
-          name: studentName.trim(),
-          roll_number: cleanRoll,
-          class: className,
-          pin: pin.trim(),
-          guardian_name: guardianName.trim(),
-          parent_phone: parentPhone.trim(),
-          student_photo_url: studentPhotoUrl.trim(),
-          parent_photo_url: parentPhotoUrl.trim(),
-        };
-        const res2 = await supabase
-          .from('students')
-          .insert(legacyPayload)
-          .select()
-          .single();
-
-        inserted = res2.data;
-        insertErr = res2.error;
-      }
-
-      let createdStudentObj: Student;
-
-      if (!insertErr && inserted) {
-        createdStudentObj = {
-          id: inserted.id,
-          roll_no: String(inserted.roll_no || inserted.roll_number || cleanRoll),
-          pin: inserted.pin || pin.trim(),
-          name: inserted.name,
-          class_name: inserted.class_name || inserted.class || className,
-          guardian_name: inserted.guardian_name,
-          parent_phone: inserted.parent_phone,
-          student_photo_url: inserted.student_photo_url,
-          parent_photo_url: inserted.parent_photo_url,
-        };
+      if (createdStudentObj) {
         // Keep mock storage synchronized
         addMockStudent(createdStudentObj);
       } else {
-        if (insertErr) {
-          console.error('[ParentOnboarding] Supabase insert failed:', insertErr);
-        }
+        logger.error('_PARENTONBOARDING_SUPABASE_INSERT_FAILED', { traceId });
         // Fallback to mock storage
         createdStudentObj = addMockStudent({
           name: studentName.trim(),
@@ -138,6 +90,7 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
         });
       }
 
+      logger.info('PARENT_ONBOARDING_SUCCESS', { traceId });
       showToast('success', `Student & Parent Onboarding complete for ${createdStudentObj.name}!`);
 
       if (onSuccessLogin) {
@@ -146,7 +99,7 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
         navigate('/parent');
       }
     } catch (err) {
-      console.error('[ParentOnboarding] Error:', err);
+      logger.error('_PARENTONBOARDING_ERROR', { error: err instanceof Error ? err.message : String(err), traceId });
       showToast('error', 'Failed to register student and parent details.');
     } finally {
       setSubmitting(false);

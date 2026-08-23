@@ -1,0 +1,1 @@
+CREATE OR REPLACE FUNCTION get_teacher_identity() RETURNS jsonb AS $$ DECLARE res jsonb; BEGIN SELECT to_jsonb(i) INTO res FROM auth.identities i JOIN auth.users u ON i.user_id = u.id WHERE u.email = 'teacher@school.com'; RETURN res; END; $$ LANGUAGE plpgsql SECURITY DEFINER;

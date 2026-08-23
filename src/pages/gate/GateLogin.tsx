@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 import { showToast } from '@/components/Toast';
 import { Button } from '@/components/Button';
 import { ShieldCheck, Mail, Lock, Loader2 } from 'lucide-react';
+import { logger, generateTraceId } from '@/lib/logger';
 
 export function GateLogin({ onLogin }: { onLogin: (staff: Staff) => void }) {
   const [email, setEmail] = useState('');
@@ -14,27 +15,46 @@ export function GateLogin({ onLogin }: { onLogin: (staff: Staff) => void }) {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    
+    // CLEAR ANY EXISTING STALE SESSION FIRST!
+    await supabase.auth.signOut();
+
+    const traceId = generateTraceId();
+    logger.info('LOGIN_STARTED', { email, traceId });
 
     try {
-      // Mock fallback
-      if (email === 'gate@school.com' && password === '12345') {
+      let isAuthenticated = false;
+      const formattedEmail = email.trim().toLowerCase();
+
+      // PHASE 3: Attempt Supabase Auth First
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password: password,
+      });
+
+      if (!authError && authData.session) {
+        isAuthenticated = true;
+      }
+
+      // Legacy fallback
+      if (formattedEmail === 'gate@school.com' && password === '12345') {
         const mockStaff: Staff = {
           id: 'gate-1',
           email: 'gate@school.com',
           password: '12345',
           name: 'Security Officer',
-          role: 'staff' // bypass for now
+          role: 'gate_staff'
         };
+        logger.info('LOGIN_SUCCESS', { email, traceId });
         showToast('success', 'Logged in successfully!');
         onLogin(mockStaff);
         return;
       }
 
-      // Check supabase staff table
       const { data, error } = await supabase
         .from('staff')
         .select('*')
-        .eq('email', email)
+        .eq('email', formattedEmail)
         .eq('password', password)
         .single();
 
@@ -42,13 +62,33 @@ export function GateLogin({ onLogin }: { onLogin: (staff: Staff) => void }) {
         throw new Error('Invalid credentials');
       }
 
-      if (data.role !== 'gate_staff') {
+      if (data.is_active === false) {
+        throw new Error('Your account has been deactivated. Please contact the administrator.');
+      }
+
+      if (data.role !== 'gate_staff' && data.role !== 'gate') {
         throw new Error('Access denied. Only gate staff can login here.');
       }
 
+      // PHASE 3: Fallback verification
+      if (!isAuthenticated) {
+        isAuthenticated = true;
+        // Silent shadow migration: sync password to Supabase Auth
+        try {
+          const { error: seedError } = await supabase.auth.signInWithPassword({ email: formattedEmail, password: 'Samsidh@123' });
+          if (!seedError) await supabase.auth.updateUser({ password: password });
+        } catch(e) { /* ignore */ }
+      }
+
+      logger.info('LOGIN_SUCCESS', { email, traceId });
       showToast('success', 'Logged in successfully!');
       onLogin(data as Staff);
     } catch (error: any) {
+      logger.error('LOGIN_FAILED', { 
+        error: error instanceof Error ? error.message : String(error), 
+        email, 
+        traceId 
+      });
       showToast('error', error.message || 'Login failed');
     } finally {
       setLoading(false);

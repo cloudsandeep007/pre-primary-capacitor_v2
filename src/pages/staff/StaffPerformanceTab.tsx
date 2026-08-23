@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { Staff, Student, ClassLevel, Attendance, DailyGrade } from '../../lib/types';
+import { Staff, Student, Attendance, DailyGrade, ClassLevel } from '../../lib/types';
+import { studentService } from '@/services/studentService';
+import { attendanceService } from '@/services/attendanceService';
+import { gradeService } from '@/services/gradeService';
 import { DateFilterType, DATE_FILTERS, getDateFromFilter } from '../../lib/dateUtils';
 import { Filter, Users, TrendingUp, Award, Calendar, Loader2, AlertCircle, Medal, Star } from 'lucide-react';
 import { format } from 'date-fns';
+import { logger } from '@/lib/logger';
 
 interface StaffPerformanceTabProps {
   staff: Staff;
@@ -19,6 +22,7 @@ export function StaffPerformanceTab({ staff, assignedClass }: StaffPerformanceTa
   const [attendance, setAttendance] = useState<Attendance[]>([]);
   const [grades, setGrades] = useState<DailyGrade[]>([]);
   const [students, setStudents] = useState<Record<string, Student>>({});
+  const isDaily = dateFilter === 'Daily';
 
   useEffect(() => {
     async function fetchPerformance() {
@@ -27,28 +31,12 @@ export function StaffPerformanceTab({ staff, assignedClass }: StaffPerformanceTa
         setError(null);
         
         const filterDateStr = getDateFromFilter(dateFilter);
-        const isDaily = dateFilter === 'Daily';
 
-        // Fetch students in assigned class
-        let studentsQuery = supabase.from('students').select('*');
-        
-        const { data: studentsData, error: studentsError } = await studentsQuery;
-        if (studentsError) throw studentsError;
-
-        let filteredStudents = studentsData || [];
-        if (assignedClass !== 'All') {
-           filteredStudents = filteredStudents.filter(s => {
-             const c = s.class_name?.trim().toLowerCase();
-             const a = assignedClass.toLowerCase();
-             if (a === 'junior kg' && (c === 'lkg' || c === 'junior kg' || c === 'junior_kg')) return true;
-             if (a === 'senior kg' && (c === 'ukg' || c === 'senior kg' || c === 'senior_kg')) return true;
-             if (a === 'nursery' && (c === 'nursery' || c === 'nurnury' || c === 'nurcery')) return true;
-             return c === a;
-           });
-        }
+        // Fetch students in assigned class via service
+        const studentsData = await studentService.fetchAllStudents(assignedClass);
         
         const studentMap: Record<string, Student> = {};
-        filteredStudents.forEach(s => {
+        studentsData.forEach(s => {
           studentMap[s.id] = s;
         });
         setStudents(studentMap);
@@ -62,40 +50,25 @@ export function StaffPerformanceTab({ staff, assignedClass }: StaffPerformanceTa
           return;
         }
 
-        // Fetch attendance
-        let attendanceQuery = supabase
-          .from('attendance')
-          .select('*')
-          .in('student_id', studentIds);
-          
+        // Fetch attendance via service
+        let attendanceData: Attendance[] = [];
         if (isDaily) {
-          attendanceQuery = attendanceQuery.eq('date', filterDateStr);
+          attendanceData = await attendanceService.fetchAttendanceByClassAndDate(assignedClass, filterDateStr);
         } else {
-          attendanceQuery = attendanceQuery.gte('date', filterDateStr);
+          attendanceData = await attendanceService.fetchAttendanceByDateRange(filterDateStr, undefined, assignedClass);
         }
-
-        const { data: attendanceData, error: attendanceError } = await attendanceQuery;
-        if (attendanceError) throw attendanceError;
-        setAttendance(attendanceData || []);
+        
+        // Filter attendance to just these students (in case of class transfers)
+        const filteredAttendance = attendanceData.filter(a => studentIds.includes(a.student_id));
+        setAttendance(filteredAttendance);
 
         // Fetch grades
-        let gradesQuery = supabase
-          .from('daily_grades')
-          .select('*')
-          .in('student_id', studentIds);
-          
-        if (isDaily) {
-          gradesQuery = gradesQuery.eq('date', filterDateStr);
-        } else {
-          gradesQuery = gradesQuery.gte('date', filterDateStr);
-        }
-
-        const { data: gradesData, error: gradesError } = await gradesQuery;
-        if (gradesError) throw gradesError;
-        setGrades(gradesData || []);
+        const allGrades = await gradeService.fetchGradesByFilter(filterDateStr, isDaily, assignedClass);
+        const filteredGrades = allGrades.filter(g => studentIds.includes(g.student_id));
+        setGrades(filteredGrades);
 
       } catch (err: any) {
-        console.error('Error fetching staff performance:', err);
+        logger.error('ERROR_FETCHING_STAFF_PERFORMANCE', { error: err instanceof Error ? err.message : String(err) });
         setError(err.message || 'Failed to load performance data');
       } finally {
         setLoading(false);

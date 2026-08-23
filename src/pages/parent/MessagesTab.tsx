@@ -1,27 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Student } from '@/lib/types';
+import { Student, Announcement, AnnouncementReply } from '@/lib/types';
+import { announcementService } from '@/services/announcementService';
 import { Megaphone, Send, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
-interface Announcement {
-  id: string;
-  title: string;
-  body: string;
-  staff_name: string;
-  created_at: string;
-  image_url?: string;
-  class_name: string;
-}
 
-interface AnnouncementReply {
-  id: string;
-  announcement_id: string;
-  sender_type: string;
-  sender_name: string;
-  student_id: string;
-  body: string;
-  created_at: string;
-}
 
 interface MessagesTabProps {
   student: Student;
@@ -60,43 +44,17 @@ export function MessagesTab({ student }: MessagesTabProps) {
   }, [student.class_name]);
 
   const fetchAnnouncements = async () => {
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*')
-      .eq('class_name', student.class_name)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching announcements:', error);
-    } else {
-      setAnnouncements(data || []);
-      if (data && data.length > 0) {
-        fetchReplies(data.map((a: Announcement) => a.id));
-      }
+    const data = await announcementService.fetchAnnouncements(student.class_name);
+    setAnnouncements(data);
+    if (data.length > 0) {
+      fetchReplies(data.map((a: Announcement) => a.id));
     }
     setLoading(false);
   };
 
   const fetchReplies = async (announcementIds: string[]) => {
-    if (announcementIds.length === 0) return;
-    const { data, error } = await supabase
-      .from('announcement_replies')
-      .select('*')
-      .in('announcement_id', announcementIds)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Error fetching replies:', error);
-    } else {
-      const repliesMap: Record<string, AnnouncementReply[]> = {};
-      data?.forEach((reply: AnnouncementReply) => {
-        if (!repliesMap[reply.announcement_id]) {
-          repliesMap[reply.announcement_id] = [];
-        }
-        repliesMap[reply.announcement_id].push(reply);
-      });
-      setReplies(repliesMap);
-    }
+    const repliesMap = await announcementService.fetchReplies(announcementIds);
+    setReplies(repliesMap);
   };
 
   const fetchRepliesAll = async () => {
@@ -108,16 +66,16 @@ export function MessagesTab({ student }: MessagesTabProps) {
   const handleSendReply = async (announcementId: string) => {
     if (!replyText.trim()) return;
 
-    const { error } = await supabase.from('announcement_replies').insert([{
+    const { error } = await announcementService.createReply({
       announcement_id: announcementId,
       sender_type: 'parent',
       sender_name: `${student.guardian_name || 'Parent'} (${student.name})`,
       student_id: student.id,
       body: replyText.trim()
-    }]);
+    });
 
     if (error) {
-      console.error('Error sending reply:', error);
+      logger.error('ERROR_SENDING_REPLY', { error: error instanceof Error ? error.message : String(error) });
     } else {
       setReplyText('');
       fetchRepliesAll();

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { staffService } from '@/services/staffService';
 import { X, UserPlus, Shield, Key } from 'lucide-react';
 import { showToast } from '@/components/Toast';
+import { logger } from '@/lib/logger';
 
 export function AddStaffModal({ onClose, onSaved }: { onClose: () => void, onSaved: () => void }) {
   const [name, setName] = useState('');
@@ -15,20 +17,20 @@ export function AddStaffModal({ onClose, onSaved }: { onClose: () => void, onSav
     e.preventDefault();
     setLoading(true);
     
-    const { error } = await supabase.from('staff').insert([{
+    const { error } = await staffService.createStaff({
       name,
       email,
-      password_hash: password, // In a real app this should be securely hashed via Auth Edge Function
+      password,
       role,
       assigned_class: assignedClass
-    }]);
+    });
 
     setLoading(false);
     if (error) {
-      console.error(error);
-      showToast('Error adding staff: ' + error.message, 'error');
+      logger.error('ERROR', { error: error instanceof Error ? error.message : String(error) });
+      showToast('error', 'Error adding staff: ' + error.message);
     } else {
-      showToast('Staff added successfully!', 'success');
+      showToast('success', 'Staff added successfully!');
       onSaved();
     }
   };

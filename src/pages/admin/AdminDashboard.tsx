@@ -1,13 +1,22 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Users, BookOpen, Clock, Search, LogOut, ArrowLeft, UserCheck, Activity, Eye, FileText } from 'lucide-react';
+import { ShieldCheck, Users, BookOpen, Clock, Search, LogOut, ArrowLeft, UserCheck, Activity, Eye, FileText, LayoutDashboard, DollarSign, Megaphone, Calendar, Settings, Menu, X } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
-import { Staff, Student, DailyLog, GatePass } from '@/lib/types';
+import { Staff, Student, DailyLog, GatePass, Attendance, SchoolEvent } from '@/lib/types';
 import { Logo } from '@/components/Logo';
 import { FullScreenSpinner } from '@/components/Spinner';
-import { getMockStaff, getMockStudents, getMockLogs, getMockGatePasses } from '@/lib/mockData';
+import { getMockLogs, getMockStaff, getMockStudents, getMockGatePasses } from '@/lib/mockData';
+import { logger, generateTraceId } from '@/lib/logger';
+import { activityService } from '@/services/activityService';
+import { staffService } from '@/services/staffService';
+import { gatePassService } from '@/services/gatePassService';
+import { studentService } from '@/services/studentService';
+import { attendanceService } from '@/services/attendanceService';
+import { eventService } from '@/services/eventService';
+import { APP_VERSION, ENVIRONMENT, SUPABASE_PROJECT_ID } from '@/lib/env';
+import { auditLog } from '@/lib/audit';
 
-import { Mail, Lock, ShieldAlert, KeyRound } from 'lucide-react';
+import { Mail, Lock, ShieldAlert, KeyRound, UserPlus, MessageSquare, FileText as FileIcon } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
@@ -16,9 +25,21 @@ import { StudentHistoryModal } from '@/pages/staff/StudentHistoryModal';
 import { ActivityFormModal } from '@/pages/staff/ActivityFormModal';
 import { AddStaffModal } from '@/pages/admin/AddStaffModal';
 import { AnalyticsTab } from './AnalyticsTab';
+import { AdminDashboardOverview } from './AdminDashboardOverview';
+import { AdminStudentsList } from './AdminStudentsList';
+import { AdminStaffList } from './AdminStaffList';
+import { AdminCommunicationView, AdminEventsView } from './AdminPlaceholderViews';
+import { AdminClassesView } from './AdminClassesView';
+import { AdminFinanceView } from './AdminFinanceView';
+import { AdminSettingsView } from './AdminSettingsView';
+import { AdminAdmissionsView } from './AdminAdmissionsView';
+import { AdminComplaintsView } from './AdminComplaintsView';
+import { AdminDocumentsView } from './AdminDocumentsView';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 export function AdminDashboard() {
   const { navigate } = useRouter();
+  const { can, loading: permsLoading } = usePermissions();
 
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
@@ -26,17 +47,29 @@ export function AdminDashboard() {
   const [adminLoginLoading, setAdminLoginLoading] = useState(false);
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'activity' | 'analytics' | 'students' | 'staff'>('activity');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'activity' | 'analytics' | 'students' | 'staff' | 'classes' | 'finance' | 'communication' | 'events' | 'settings' | 'admissions' | 'complaints' | 'documents'>('dashboard');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const [staffList, setStaffList] = useState<Staff[]>([]);
   const [studentList, setStudentList] = useState<Student[]>([]);
   const [activityLogs, setActivityLogs] = useState<DailyLog[]>([]);
   const [gatePasses, setGatePasses] = useState<GatePass[]>([]);
+  const [todayAttendance, setTodayAttendance] = useState<Attendance[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<SchoolEvent[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [viewHistoryStudent, setViewHistoryStudent] = useState<Student | null>(null);
   const [logActivityStudent, setLogActivityStudent] = useState<Student | null>(null);
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+
+  const handleTabSwitch = (tab: any, requiredPermission: string) => {
+    if (!can(requiredPermission)) {
+      showToast('error', 'You do not have permission to access this module.');
+      return;
+    }
+    setActiveTab(tab);
+    setIsSidebarOpen(false);
+  };
 
   useEffect(() => {
     if (adminAuthenticated) {
@@ -64,10 +97,32 @@ export function AdminDashboard() {
     }
 
     setAdminLoginLoading(true);
+    const traceId = generateTraceId();
+    
+    logger.info('ADMIN_LOGIN_ATTEMPT', { 
+      email: adminEmail, 
+      password: adminPassword,
+      traceId
+    });
+
     try {
+      await supabase.auth.signOut();
+      
       const cleanEmail = adminEmail.trim().toLowerCase();
       let matchedAdmin: Staff | null = null;
+      let isAuthenticated = false;
 
+      // PHASE 3: Attempt Supabase Auth First
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: adminPassword,
+      });
+
+      if (!authError && authData.session) {
+        isAuthenticated = true;
+      }
+
+      // Legacy fallback logic
       try {
         const { data } = await supabase
           .from('staff')
@@ -75,7 +130,7 @@ export function AdminDashboard() {
           .eq('email', cleanEmail)
           .maybeSingle();
 
-        if (data && (data.role === 'admin' || data.email === 'admin@school.com')) {
+        if (data) {
           matchedAdmin = {
             id: data.id,
             email: data.email,
@@ -83,34 +138,71 @@ export function AdminDashboard() {
             name: data.name,
             assigned_class: data.assigned_class,
             role: data.role || 'admin',
+            is_active: data.is_active !== false,
           };
         }
       } catch (e) {
-        console.warn('[AdminDashboard] Supabase admin login check fallback');
+        logger.warn('_ADMINDASHBOARD_SUPABASE_ADMIN_LOGIN_CHECK_FALLBACK');
       }
 
       if (!matchedAdmin) {
         const mockStaff = getMockStaff();
         matchedAdmin = mockStaff.find(
-          (s) => s.email.toLowerCase() === cleanEmail && (s.role === 'admin' || s.email === 'admin@school.com')
+          (s) => s.email.toLowerCase() === cleanEmail
         ) || null;
       }
 
       if (!matchedAdmin) {
-        showToast('error', 'Access denied. Account is not registered as an Admin.');
+        showToast('error', 'Invalid admin credentials');
         setAdminLoginLoading(false);
         return;
       }
 
-      if (matchedAdmin.password !== adminPassword.trim() && matchedAdmin.password !== btoa(adminPassword.trim())) {
-        showToast('error', 'Invalid admin password.');
+      if (matchedAdmin.is_active === false) {
+        showToast('error', 'Your account has been deactivated. Please contact superadmin.');
+        await supabase.auth.signOut();
         setAdminLoginLoading(false);
         return;
+      }
+
+      // PHASE 3: Fallback verification
+      if (!isAuthenticated) {
+        if (matchedAdmin.password === adminPassword.trim() || matchedAdmin.password === btoa(adminPassword.trim())) {
+          isAuthenticated = true;
+          // Silent shadow migration: sync password to Supabase Auth
+          try {
+            const { error: seedError } = await supabase.auth.signInWithPassword({ email: cleanEmail, password: 'Samsidh@123' });
+            if (!seedError) await supabase.auth.updateUser({ password: adminPassword });
+          } catch(e) { /* ignore */ }
+        } else {
+          showToast('error', 'Invalid admin password.');
+          setAdminLoginLoading(false);
+          return;
+        }
       }
 
       setAdminAuthenticated(true);
+      logger.info('LOGIN_SUCCESS', { email: adminEmail, traceId });
+
+      auditLog({
+        actor_type: 'admin',
+        actor_name: matchedAdmin.name,
+        actor_id: matchedAdmin.id,
+        action: 'ADMIN_LOGIN',
+        resource_type: 'system',
+        metadata: {
+          email: adminEmail,
+          traceId,
+        },
+      });
+
       showToast('success', `Admin access granted. Welcome, ${matchedAdmin.name}!`);
-    } catch (err) {
+    } catch (err: any) {
+      logger.error('LOGIN_FAILED', { 
+        error: err.message || String(err), 
+        email: adminEmail,
+        traceId
+      });
       showToast('error', 'Authentication failed.');
     } finally {
       setAdminLoginLoading(false);
@@ -197,488 +289,234 @@ export function AdminDashboard() {
 
   const loadAllAdminData = async () => {
     setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
     try {
-      // 1. Fetch Staff
-      const { data: sData } = await supabase.from('staff').select('*');
-      if (sData && sData.length > 0) {
-        setStaffList(
-          sData.map((d: any) => ({
-            id: d.id,
-            email: d.email,
-            password: d.password || d.password_hash || '',
-            name: d.name || d.email.split('@')[0],
-            assigned_class: d.assigned_class || 'All',
-            photo_url: d.photo_url,
-            role: d.role || 'staff',
-          }))
-        );
-      } else {
-        setStaffList(getMockStaff());
-      }
+      const sData = await staffService.fetchAllStaff();
+      setStaffList(sData);
 
-      // 2. Fetch Students
-      const { data: stData } = await supabase.from('students').select('*');
+      const stData = await studentService.fetchAllStudents();
       if (stData && stData.length > 0) {
-        setStudentList(
-          stData.map((d: any) => ({
-            id: d.id || String(d.roll_no || d.roll_number),
-            roll_no: String(d.roll_no || d.roll_number || '101'),
-            pin: String(d.pin || '1234'),
-            name: d.name || 'Student',
-            class_name: d.class_name || d.class || 'Nursery',
-            guardian_name: d.guardian_name,
-            parent_phone: d.parent_phone,
-            student_photo_url: d.student_photo_url,
-            parent_photo_url: d.parent_photo_url,
-          }))
-        );
+        setStudentList(stData);
       } else {
         setStudentList(getMockStudents());
       }
 
-      // 3. Fetch Activity Logs
-      let logsData: DailyLog[] = [];
-      const { data: aData } = await supabase.from('daily_logs').select('*').order('created_at', { ascending: false });
-      if (aData && aData.length > 0) {
-        logsData = aData as DailyLog[];
+      const fetchedLogs = await activityService.fetchAllLogs();
+      if (fetchedLogs && fetchedLogs.length > 0) {
+        setActivityLogs(fetchedLogs);
       } else {
-        const { data: fallbackAData } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false });
-        if (fallbackAData && fallbackAData.length > 0) {
-          logsData = fallbackAData as DailyLog[];
-        } else {
-          logsData = getMockLogs();
-        }
+        setActivityLogs(getMockLogs());
       }
-      setActivityLogs(logsData);
 
-      // 4. Fetch Gate Passes
-      const { data: gData } = await supabase.from('gate_passes').select('*').order('created_at', { ascending: false });
-      if (gData && gData.length > 0) {
-        setGatePasses(gData as GatePass[]);
+      const fetchedGatePasses = await gatePassService.fetchAllPasses();
+      if (fetchedGatePasses && fetchedGatePasses.length > 0) {
+        setGatePasses(fetchedGatePasses);
       } else {
         setGatePasses(getMockGatePasses());
       }
+
+      const fetchedAttendance = await attendanceService.fetchAttendanceByClassAndDate('All', today);
+      setTodayAttendance(fetchedAttendance);
+
+      const fetchedEvents = await eventService.fetchUpcomingEvents();
+      if (fetchedEvents && fetchedEvents.length > 0) {
+        setUpcomingEvents(fetchedEvents);
+      } else {
+        setUpcomingEvents(eventService.getMockEvents());
+      }
+
     } catch (err) {
-      console.warn('[AdminDashboard] Fallback to mock data');
+      logger.warn('_ADMINDASHBOARD_FALLBACK_TO_MOCK_DATA');
       setStaffList(getMockStaff());
       setStudentList(getMockStudents());
       setActivityLogs(getMockLogs());
       setGatePasses(getMockGatePasses());
+      setUpcomingEvents(eventService.getMockEvents());
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredStudents = studentList.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.roll_no.includes(searchQuery) ||
-      (s.guardian_name && s.guardian_name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  const filteredStaff = staffList.filter(
-    (st) =>
-      st.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      st.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   if (loading) {
     return <FullScreenSpinner label="Loading Admin Activity Portal..." />;
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const completedHandoversToday = gatePasses.filter((g) => g.pass_date === todayStr && g.status === 'COMPLETED').length;
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 overflow-x-hidden w-full">
-      {/* Admin Top Header */}
-      <header className="sticky top-0 z-20 bg-slate-900/95 backdrop-blur-md text-white border-b border-slate-800 shadow-md">
-        <div className="max-w-6xl mx-auto px-3.5 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 flex-shrink-0">
-            <Logo size="sm" />
-            <span className="hidden sm:inline-flex items-center gap-1 bg-amber-500/20 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full border border-amber-500/30">
-              👑 Admin Control Portal
+    <div className="min-h-screen bg-slate-50 flex overflow-hidden w-full text-slate-800">
+      
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Left Sidebar */}
+      <aside className={`fixed md:relative z-50 h-screen w-64 bg-slate-950 text-slate-300 flex flex-col flex-shrink-0 border-r border-slate-800 transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-6 flex items-center justify-between">
+          <div>
+            <Logo size="sm" theme="dark" />
+            <span className="mt-2 inline-flex items-center gap-1 bg-indigo-500/20 text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-500/30">
+              👑 Admin Portal
             </span>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-            <button
-              onClick={() => {
-                setAdminAuthenticated(false);
-                navigate('/');
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 hover:text-rose-200 border border-rose-500/40 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
-              title="Sign Out of Admin Portal"
-              aria-label="Sign out"
+          <button className="md:hidden text-slate-400 hover:text-white" onClick={() => setIsSidebarOpen(false)}>
+            <X size={20} />
+          </button>
+        </div>
+        
+        <nav className="flex-1 px-4 space-y-1 overflow-y-auto mt-4">
+          <button 
+            onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+          >
+            <LayoutDashboard size={18} /> Dashboard
+          </button>
+          <button 
+              onClick={() => handleTabSwitch('students', 'students.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'students' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
             >
-              <LogOut size={14} />
-              <span>Logout</span>
+              <Users size={18} /> Students
             </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Title Banner */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 rounded-3xl p-6 text-white shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-bold uppercase tracking-wider bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-md">
-                Principal Dashboard
-              </span>
-              <span className="text-xs text-slate-300 font-medium">All Activities & Audit Logs</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Preschool Activity Overview</h1>
-            <p className="text-slate-300 text-sm mt-1">
-              Full visibility over staff-parent interactions, daily activity logs, and gate handover scans.
-            </p>
-          </div>
-        </div>
-
-        {/* Stats Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-xl flex-shrink-0">
-              👶
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Total Enrolled</p>
-              <p className="text-2xl font-bold text-slate-800">{studentList.length}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xl flex-shrink-0">
-              👩‍🏫
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Staff Members</p>
-              <p className="text-2xl font-bold text-slate-800">{staffList.length}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold text-xl flex-shrink-0">
-              📝
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Daily Logs</p>
-              <p className="text-2xl font-bold text-slate-800">{activityLogs.length}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xl flex-shrink-0">
-              🎫
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Handovers Today</p>
-              <p className="text-2xl font-bold text-emerald-600">{completedHandoversToday}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setActiveTab('activity')}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'activity'
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
+          <button 
+              onClick={() => handleTabSwitch('staff', 'staff.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'staff' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <ShieldCheck size={18} /> Teachers & Staff
+            </button>
+          <button 
+              onClick={() => handleTabSwitch('classes', 'classes.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'classes' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <BookOpen size={18} /> Classes & Curriculum
+            </button>
+            <button 
+              onClick={() => handleTabSwitch('admissions', 'admissions.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'admissions' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <UserPlus size={18} /> Admissions
+            </button>
+            <button 
+              onClick={() => handleTabSwitch('finance', 'finance.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'finance' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <DollarSign size={18} /> Finance
+            </button>
+            <button 
+              onClick={() => handleTabSwitch('complaints', 'complaints.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'complaints' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <MessageSquare size={18} /> Complaints
+            </button>
+            <button 
+              onClick={() => handleTabSwitch('documents', 'documents.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'documents' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <FileIcon size={18} /> Documents
+            </button>
+          <button 
+              onClick={() => handleTabSwitch('communication', 'announcements.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'communication' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <Megaphone size={18} /> Communication
+            </button>
+          <button 
+            onClick={() => { setActiveTab('events'); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'events' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+          >
+            <Calendar size={18} /> Events & Activities
+          </button>
+          <button 
+              onClick={() => handleTabSwitch('settings', 'system.read')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-semibold text-sm transition-all ${activeTab === 'settings' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <Settings size={18} /> Settings
+            </button>
+          
+          <div className="pt-4 mt-4 border-t border-slate-800">
+             <p className="px-3 mb-2 text-xs font-bold uppercase tracking-wider text-slate-600">Legacy Views</p>
+             <button 
+              onClick={() => { setActiveTab('activity'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-semibold text-xs transition-all ${activeTab === 'activity' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-800 hover:text-white'}`}
             >
               <Activity size={16} /> Activity Stream
             </button>
-            <button
-              onClick={() => setActiveTab('analytics')}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'analytics'
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
+             <button 
+              onClick={() => { setActiveTab('analytics'); setIsSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-semibold text-xs transition-all ${activeTab === 'analytics' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-800 hover:text-white'}`}
             >
-              <FileText size={16} /> Analytics & Reports
-            </button>
-            <button
-              onClick={() => setActiveTab('students')}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'students'
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Users size={16} /> Student Directory
-            </button>
-            <button
-              onClick={() => setActiveTab('staff')}
-              className={`px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center gap-2 ${
-                activeTab === 'staff'
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <ShieldCheck size={16} /> Teachers Directory
+              <FileText size={16} /> Analytics
             </button>
           </div>
+        </nav>
+      </aside>
 
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search records..."
-              className="w-full sm:w-60 pl-9 pr-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 outline-none focus:border-slate-400"
-            />
+      {/* Main Content */}
+      <div className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden bg-slate-50/50">
+        {/* Top Header */}
+        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 shrink-0 z-10">
+          <div className="flex items-center gap-3">
+             <button 
+               onClick={() => setIsSidebarOpen(true)} 
+               className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+             >
+               <Menu size={20} />
+             </button>
+             <div className="md:hidden font-bold flex items-center gap-2">
+                <Logo size="sm" />
+             </div>
           </div>
-        </div>
-
-        {/* Tab 1: Live Staff-Parent Activity Feed Stream */}
-        {activeTab === 'activity' && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-              Live System Activity Logs & Gate Scans
-            </h2>
-
-            {/* Combined Stream: Gate Passes + Activity Logs */}
-            <div className="space-y-3">
-              {gatePasses.map((pass) => (
-                <div
-                  key={pass.id}
-                  className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-lg flex-shrink-0">
-                      🎫
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800 text-sm">{pass.student_name}</span>
-                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-semibold">
-                          Roll #{pass.roll_no}
-                        </span>
-                        <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">
-                          {pass.class_name}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        QR Gate Pass Status:{' '}
-                        <span className={`font-bold ${pass.status === 'COMPLETED' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {pass.status === 'COMPLETED' ? 'CHILD HANDOVER COMPLETED' : 'PASS ACTIVE & PENDING'}
-                        </span>
-                        {pass.approved_by_staff && ` • Approved by ${pass.approved_by_staff}`}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="text-right text-xs text-slate-400 font-medium self-end sm:self-center">
-                    Date: {pass.pass_date || todayStr}
-                    {pass.pickup_time && (
-                      <div className="text-emerald-700 font-bold">
-                        {new Date(pass.pickup_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {activityLogs.map((log) => {
-                const matchedStud = studentList.find((s) => s.id === log.student_id || s.roll_no === log.student_id);
-                return (
-                  <div key={log.id} className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs">
-                          {log.staff_name?.charAt(0) || 'T'}
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-800">
-                            {log.staff_name || 'Teacher'} logged activity for{' '}
-                            <span className="text-sky-600">{matchedStud?.name || 'Student'}</span>
-                          </p>
-                          <p className="text-[10px] text-slate-400">
-                            {new Date(log.created_at || Date.now()).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {log.teacher_notes && (
-                      <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                        "{log.teacher_notes}"
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+          <div className="hidden md:flex relative w-64">
+             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+             <input type="text" placeholder="Search..." className="w-full pl-9 pr-4 py-1.5 text-sm rounded-lg border border-slate-200 focus:border-indigo-500 outline-none bg-slate-50" />
           </div>
-        )}
-
-        {/* Tab 2: Analytics & Overall Activity Breakdown */}
-        {activeTab === 'analytics' && (
-          <AnalyticsTab />
-        )}
-
-        {/* Tab 3: Students & Verification Photos Directory */}
-        {activeTab === 'students' && (
-          <div className="space-y-4">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              Student Directory & Gate Verification Photos ({filteredStudents.length})
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {filteredStudents.map((stud) => (
-                <div key={stud.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-bold text-slate-800 text-base">{stud.name}</h3>
-                      <p className="text-xs text-slate-500">
-                        Roll #{stud.roll_no} • <span className="font-semibold text-sky-600">{stud.class_name}</span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setViewHistoryStudent(stud)}
-                        className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-700 hover:bg-sky-100 text-xs font-bold border border-sky-200"
-                      >
-                        👁️ Feed
-                      </button>
-                      <button
-                        onClick={() => setLogActivityStudent(stud)}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold border border-emerald-200"
-                      >
-                        📝 Log
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Side-by-Side Photos */}
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center text-xs">
-                    <div>
-                      <p className="font-bold text-slate-600 text-[11px] mb-1">Student Photo</p>
-                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-white mx-auto flex items-center justify-center text-lg font-bold text-slate-400">
-                        {stud.student_photo_url ? (
-                          <img src={stud.student_photo_url} alt={stud.name} className="w-full h-full object-cover" />
-                        ) : (
-                          '👶'
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="font-bold text-slate-600 text-[11px] mb-1">Parent Photo</p>
-                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-white mx-auto flex items-center justify-center text-lg font-bold text-slate-400">
-                        {stud.parent_photo_url ? (
-                          <img src={stud.parent_photo_url} alt="Parent" className="w-full h-full object-cover" />
-                        ) : (
-                          '👨‍👩‍👧'
-                        )}
-                      </div>
-                      <p className="text-[10px] font-semibold text-slate-700 mt-1 truncate">
-                        {stud.guardian_name || 'Guardian'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="flex items-center gap-3">
+             <button onClick={async () => { await supabase.auth.signOut(); setAdminAuthenticated(false); navigate('/'); }} className="flex items-center gap-2 text-rose-600 text-xs font-bold hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-colors">
+               <LogOut size={14} /> Logout
+             </button>
           </div>
-        )}
+        </header>
 
-        {/* Tab 4: Teachers & Staff Directory */}
-        {activeTab === 'staff' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-                School Staff & Teachers Directory ({filteredStaff.length})
-              </h2>
-              <button 
-                onClick={() => setShowAddStaffModal(true)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
-              >
-                + Add Staff
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {filteredStaff.map((st) => (
-                <div key={st.id} className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-sky-300 bg-sky-50 flex items-center justify-center text-xl font-bold text-sky-700 flex-shrink-0">
-                    {st.photo_url ? (
-                      <img src={st.photo_url} alt={st.name} className="w-full h-full object-cover" />
-                    ) : (
-                      st.name.charAt(0)
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-slate-800 truncate">{st.name}</h3>
-                      {st.role === 'admin' && (
-                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                          ADMIN
-                        </span>
-                      )}
-                      {st.role === 'gate_staff' && (
-                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                          GUARD
-                        </span>
-                      )}
+        {/* Scrollable Main */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 relative">
+           {activeTab === 'dashboard' && <AdminDashboardOverview 
+             students={studentList} 
+             staff={staffList} 
+             activityLogs={activityLogs} 
+             gatePasses={gatePasses} 
+             attendance={todayAttendance}
+             events={upcomingEvents}
+           />}
+           {activeTab === 'students' && <AdminStudentsList students={studentList} />}
+           {activeTab === 'staff' && <AdminStaffList staff={staffList} onAddStaff={() => setShowAddStaffModal(true)} />}
+           {activeTab === 'classes' && <AdminClassesView />}
+           {activeTab === 'finance' && <AdminFinanceView />}
+           {activeTab === 'communication' && <AdminCommunicationView />}
+             {activeTab === 'events' && <AdminEventsView />}
+             {activeTab === 'settings' && <AdminSettingsView />}
+             {activeTab === 'admissions' && <AdminAdmissionsView />}
+             {activeTab === 'complaints' && <AdminComplaintsView />}
+             {activeTab === 'documents' && <AdminDocumentsView />}
+           
+           {/* Legacy Tabs for compatibility */}
+           {activeTab === 'activity' && (
+              <div className="space-y-4 max-w-4xl">
+                 <h2 className="text-xl font-bold">Activity Stream</h2>
+                 {activityLogs.map(log => (
+                    <div key={log.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                      <p className="font-bold text-slate-800">{log.staff_name || 'Staff'}</p>
+                      <p className="text-sm text-slate-600">{log.teacher_notes || 'Logged activity.'}</p>
                     </div>
-                    <p className="text-xs text-slate-500 truncate">{st.email}</p>
-                    <p className="text-xs font-semibold text-sky-600 mt-1">
-                      Assigned: {st.assigned_class || 'All Classes'}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </main>
+                 ))}
+              </div>
+           )}
+           {activeTab === 'analytics' && <AnalyticsTab />}
+        </main>
+      </div>
 
-      {/* Admin Student History & Parent Feed View Modal */}
-      {viewHistoryStudent && (
-        <StudentHistoryModal
-          student={viewHistoryStudent}
-          staff={{
-            id: 'admin-1',
-            email: 'admin@school.com',
-            password: '',
-            name: 'Principal Sharma',
-            assigned_class: 'All',
-            role: 'admin',
-          }}
-          onClose={() => setViewHistoryStudent(null)}
-          onLogUpdated={() => loadAllAdminData()}
-        />
-      )}
-
-      {/* Admin Activity Form Modal */}
-      {logActivityStudent && (
-        <ActivityFormModal
-          student={logActivityStudent}
-          staff={{
-            id: 'admin-1',
-            email: 'admin@school.com',
-            password: '',
-            name: 'Principal Sharma',
-            assigned_class: 'All',
-            role: 'admin',
-          }}
-          onClose={() => setLogActivityStudent(null)}
-          onSaved={() => {
-            setLogActivityStudent(null);
-            loadAllAdminData();
-          }}
-        />
-      )}
-
-      {/* Add Staff Modal */}
+      {/* Modals */}
       {showAddStaffModal && (
         <AddStaffModal 
           onClose={() => setShowAddStaffModal(false)}

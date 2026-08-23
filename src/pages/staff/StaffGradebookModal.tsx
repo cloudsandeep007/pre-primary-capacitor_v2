@@ -1,23 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { X, Star, Save, AlertCircle, CheckCircle2, UserCircle2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { Staff, Student } from '../../lib/types';
+import { studentService } from '@/services/studentService';
+import { gradeService } from '@/services/gradeService';
+import { Staff, Student, ClassLevel, DailyGrade } from '../../lib/types';
+import { logger, generateTraceId } from '@/lib/logger';
 
 interface StaffGradebookModalProps {
   staff: Staff;
   assignedClass: string;
   onClose: () => void;
-}
-
-interface DailyGrade {
-  id?: string;
-  student_id: string;
-  class_name: string;
-  date: string;
-  cw_stars: number;
-  hw_stars: number;
-  activity_stars: number;
-  teacher_notes: string;
 }
 
 export function StaffGradebookModal({ staff, assignedClass, onClose }: StaffGradebookModalProps) {
@@ -28,7 +20,7 @@ export function StaffGradebookModal({ staff, assignedClass, onClose }: StaffGrad
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
 
   useEffect(() => {
     fetchData();
@@ -39,28 +31,17 @@ export function StaffGradebookModal({ staff, assignedClass, onClose }: StaffGrad
       setLoading(true);
       setError(null);
 
-      // Fetch students
-      const { data: studentsData, error: studentsError } = await supabase
-        .from('students')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .order('name');
+      // Fetch students via service
+      const studentsData = await studentService.fetchAllStudents(assignedClass);
       
-      if (studentsError) throw studentsError;
-      setStudents(studentsData || []);
+      setStudents(studentsData.sort((a, b) => a.name.localeCompare(b.name)));
 
       // Fetch grades for the selected date
-      const { data: gradesData, error: gradesError } = await supabase
-        .from('daily_grades')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .eq('date', selectedDate);
-      
-      if (gradesError) throw gradesError;
+      const gradesData = await gradeService.fetchGradesByClassAndDate(assignedClass, selectedDate);
 
       const gradesMap: Record<string, DailyGrade> = {};
       if (gradesData) {
-        gradesData.forEach(grade => {
+        gradesData.forEach((grade: DailyGrade) => {
           gradesMap[grade.student_id] = grade;
         });
       }
@@ -70,7 +51,7 @@ export function StaffGradebookModal({ staff, assignedClass, onClose }: StaffGrad
         setSelectedStudent(studentsData[0]);
       }
     } catch (err: any) {
-      console.error('Error fetching data:', err);
+      logger.error('ERROR_FETCHING_DATA', { error: err instanceof Error ? err.message : String(err) });
       setError(err.message || 'Failed to load data');
     } finally {
       setLoading(false);
@@ -103,6 +84,10 @@ export function StaffGradebookModal({ staff, assignedClass, onClose }: StaffGrad
 
   const handleSave = async () => {
     if (!selectedStudent) return;
+    
+    const traceId = generateTraceId();
+    logger.info('GRADE_SAVE_STARTED', { studentId: selectedStudent.id, traceId });
+
     try {
       setSaving(true);
       setError(null);
@@ -120,35 +105,22 @@ export function StaffGradebookModal({ staff, assignedClass, onClose }: StaffGrad
         teacher_notes: grade?.teacher_notes || ''
       };
 
-      if (grade?.id) {
-        const { error: updateError } = await supabase
-          .from('daily_grades')
-          .update(payload)
-          .eq('id', grade.id);
-        if (updateError) throw updateError;
-      } else {
-        const { data: insertData, error: insertError } = await supabase
-          .from('daily_grades')
-          .insert([payload])
-          .select();
-        if (insertError) throw insertError;
-        
-        if (insertData && insertData[0]) {
-          setGrades(prev => ({
-            ...prev,
-            [selectedStudent.id]: {
-              ...prev[selectedStudent.id],
-              id: insertData[0].id
-            }
-          }));
-        }
+      const { data, error: serviceError } = await gradeService.upsertGrade(grade?.id ? { ...payload, id: grade.id } : payload, traceId);
+      if (serviceError) throw serviceError;
+      
+      if (data) {
+        setGrades(prev => ({
+          ...prev,
+          [selectedStudent.id]: data
+        }));
       }
       
+      logger.info('GRADE_SAVE_SUCCESS', { traceId });
       setSuccessMsg('Grades saved successfully!');
       setTimeout(() => setSuccessMsg(null), 3000);
       
     } catch (err: any) {
-      console.error('Error saving grades:', err);
+      logger.error('GRADE_SAVE_FAILED', { error: err instanceof Error ? err.message : String(err), traceId });
       setError(err.message || 'Failed to save grades');
     } finally {
       setSaving(false);

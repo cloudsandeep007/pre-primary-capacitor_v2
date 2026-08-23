@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { LogOut, ChevronLeft, ChevronRight, CheckCircle2, ShieldCheck, UserCheck, Megaphone, BookOpen, Calendar, StickyNote } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronRight, CheckCircle2, ShieldCheck, UserCheck, Megaphone, BookOpen, Calendar, StickyNote, DollarSign } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import { Student, Staff, DailyLog, MediaItem, GatePass } from '@/lib/types';
 import { getMealLabel, getMealEmoji, getNapLabel, getNapEmoji, getMoodLabel, getMoodEmoji } from '@/lib/constants';
 import { Logo } from '@/components/Logo';
+import { usePermissions } from '@/contexts/PermissionContext';
 import { FullScreenSpinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
 import { getMockLogs, getMockStudents, getMockGatePasses, getMockStaff } from '@/lib/mockData';
@@ -14,7 +15,9 @@ import { HomeworkTab } from './HomeworkTab';
 import { CalendarTab } from './CalendarTab';
 import { ParentClassworkTab } from './ParentClassworkTab';
 import { PerformanceTab } from './PerformanceTab';
+import { ParentFeesTab } from './ParentFeesTab';
 import { ImageViewerModal } from '@/components/ImageViewerModal';
+import { logger } from '@/lib/logger';
 
 interface ParentFeedProps {
   student: Student;
@@ -22,14 +25,24 @@ interface ParentFeedProps {
 }
 
 export function ParentFeed({ student, onLogout }: ParentFeedProps) {
+  const { can } = usePermissions();
   const { navigate } = useRouter();
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
   const [showGatePass, setShowGatePass] = useState(false);
   const [todayGatePass, setTodayGatePass] = useState<GatePass | null>(null);
-  // Main tab: diary | messages | homework | calendar | classwork | performance
-  const [parentTab, setParentTab] = useState<'diary' | 'messages' | 'homework' | 'calendar' | 'classwork' | 'performance'>('diary');
+  // Main tab: diary | messages | homework | calendar | classwork | performance | fees
+  const [parentTab, setParentTab] = useState<'diary' | 'messages' | 'homework' | 'calendar' | 'classwork' | 'performance' | 'fees'>('diary');
+
+  const handleTabSwitch = (tab: typeof parentTab, requiredPerm?: string) => {
+    if (requiredPerm && !can(requiredPerm)) {
+      showToast('error', 'Access Denied: You do not have permission for this feature.');
+      return;
+    }
+    setParentTab(tab);
+  };
+
   const [viewerImage, setViewerImage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,7 +133,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
           remoteLogs = res.data as DailyLog[];
         }
       } catch (err) {
-        console.warn('[ParentFeed] Supabase fetch failed, falling back to local logs');
+        logger.warn('_PARENTFEED_SUPABASE_FETCH_FAILED_FALLING_BACK_TO_LOCAL_LOGS');
       }
 
       const isStudentLogMatch = (l: DailyLog) => {
@@ -162,12 +175,12 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
   const shiftDate = (days: number) => {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + days);
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     if (d.toISOString().split('T')[0] > today) return;
     setSelectedDate(d.toISOString().split('T')[0]);
   };
 
-  const isToday = selectedDate === new Date().toISOString().split('T')[0];
+  const isToday = selectedDate === new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const dateLabel = isToday
     ? 'Today'
     : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -187,7 +200,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             {/* Desktop Gate Pass button */}
             <button
-              onClick={() => setShowGatePass(true)}
+              onClick={() => { if(!can('gatepasses.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setShowGatePass(true); }}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white hover:from-teal-600 hover:to-emerald-700 transition-all text-xs font-bold shadow-sm active:scale-95 flex-shrink-0"
             >
               <span>🎫</span> Gate Pass
@@ -231,7 +244,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             </div>
           </div>
           <button
-            onClick={() => setShowGatePass(true)}
+            onClick={() => { if(!can('gatepasses.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setShowGatePass(true); }}
             className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-white text-teal-700 hover:bg-teal-50 font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 flex-shrink-0"
           >
             <span>🎫</span> Gate Pass
@@ -241,7 +254,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
         {/* Parent Main Tab Nav */}
         <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
           <button
-            onClick={() => setParentTab('diary')}
+            onClick={() => handleTabSwitch('diary', 'dailylogs.read')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'diary'
                 ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md'
@@ -251,7 +264,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             📖 Daily Diary
           </button>
           <button
-            onClick={() => setParentTab('messages')}
+            onClick={() => handleTabSwitch('messages', 'announcements.read')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'messages'
                 ? 'bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-md'
@@ -261,7 +274,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             <Megaphone size={12} /> Announcements
           </button>
           <button
-            onClick={() => setParentTab('homework')}
+            onClick={() => handleTabSwitch('homework', 'homework.read')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'homework'
                 ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md'
@@ -271,7 +284,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             <BookOpen size={12} /> Homework
           </button>
           <button
-            onClick={() => setParentTab('calendar')}
+            onClick={() => handleTabSwitch('calendar', 'events.read')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'calendar'
                 ? 'bg-gradient-to-r from-sky-500 to-blue-500 text-white shadow-md'
@@ -281,7 +294,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             <Calendar size={12} /> Calendar
           </button>
           <button
-            onClick={() => setParentTab('classwork')}
+            onClick={() => handleTabSwitch('classwork', 'classwork.read')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'classwork'
                 ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-md'
@@ -291,7 +304,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             <BookOpen size={12} /> Classwork
           </button>
           <button
-            onClick={() => setParentTab('performance')}
+            onClick={() => handleTabSwitch('performance', 'performance.read')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'performance'
                 ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md'
@@ -300,7 +313,20 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
           >
             <CheckCircle2 size={12} /> Performance
           </button>
+          <button
+            onClick={() => handleTabSwitch('fees')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'fees'
+                ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-md'
+                : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300'
+            }`}
+          >
+            <DollarSign size={12} /> Fees
+          </button>
         </div>
+
+        {/* Fees Tab */}
+        {parentTab === 'fees' && <ParentFeesTab student={student} />}
 
         {/* Messages Tab */}
         {parentTab === 'messages' && <MessagesTab student={student} />}
@@ -340,7 +366,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
                 </div>
               </div>
               <button
-                onClick={() => setShowGatePass(true)}
+                onClick={() => { if(!can('gatepasses.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setShowGatePass(true); }}
                 className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow hover:bg-emerald-700 transition-all flex-shrink-0"
               >
                 View Pass
@@ -358,7 +384,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
                 </div>
               </div>
               <button
-                onClick={() => setShowGatePass(true)}
+                onClick={() => { if(!can('gatepasses.write')) { showToast('error', 'Access Denied: You do not have permission for this feature.'); return; } setShowGatePass(true); }}
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-md shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-95 flex-shrink-0"
               >
                 Show Pass
@@ -527,7 +553,7 @@ function MediaGallery({ items, fallbackPhoto, onImageClick }: { items?: MediaIte
       try {
         parsedItems = JSON.parse(items);
       } catch (e) {
-        console.warn('Failed to parse media_items JSON string:', e);
+        logger.warn('FAILED_TO_PARSE_MEDIA_ITEMS_JSON_STRING', { error: e instanceof Error ? e.message : String(e) });
       }
     } else if (Array.isArray(items)) {
       parsedItems = items;

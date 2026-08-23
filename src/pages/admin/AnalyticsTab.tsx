@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Student, Attendance, DailyGrade } from '../../lib/types';
+import { studentService } from '@/services/studentService';
+import { attendanceService } from '@/services/attendanceService';
+import { gradeService } from '@/services/gradeService';
+import { Staff, Student, Attendance, DailyGrade } from '../../lib/types';
 import { Users, TrendingUp, Award, Calendar, Loader2, AlertCircle, Medal, Star } from 'lucide-react';
 import { format } from 'date-fns';
 import { DateFilterType, DATE_FILTERS, getDateFromFilter } from '../../lib/dateUtils';
 import { Filter } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 export function AnalyticsTab() {
   const [loading, setLoading] = useState(true);
@@ -24,53 +28,31 @@ export function AnalyticsTab() {
         const filterDateStr = getDateFromFilter(dateFilter);
         const isDaily = dateFilter === 'Daily';
 
-        // Fetch all students to map IDs to names
-        const { data: studentsData, error: studentsError } = await supabase
-          .from('students')
-          .select('*');
-
-        if (studentsError) throw studentsError;
+        // Fetch all students via service
+        const studentsData = await studentService.fetchAllStudents();
         
         const studentMap: Record<string, Student> = {};
-        studentsData?.forEach(s => {
+        studentsData.forEach(s => {
           studentMap[s.id] = s;
         });
         setStudents(studentMap);
 
-        // Fetch attendance
-        let attendanceQuery = supabase
-          .from('attendance')
-          .select('*');
-          
+        // Fetch attendance via service
+        let attendanceData: Attendance[] = [];
         if (isDaily) {
-          attendanceQuery = attendanceQuery.eq('date', filterDateStr);
+          attendanceData = await attendanceService.fetchAttendanceByClassAndDate('All', filterDateStr);
         } else {
-          attendanceQuery = attendanceQuery.gte('date', filterDateStr);
+          attendanceData = await attendanceService.fetchAttendanceByDateRange(filterDateStr);
         }
-
-        const { data: attendanceData, error: attendanceError } = await attendanceQuery;
-
-        if (attendanceError) throw attendanceError;
-        setTodayAttendance(attendanceData || []);
+        
+        setTodayAttendance(attendanceData);
 
         // Fetch grades
-        let gradesQuery = supabase
-          .from('daily_grades')
-          .select('*');
-          
-        if (isDaily) {
-          gradesQuery = gradesQuery.eq('date', filterDateStr);
-        } else {
-          gradesQuery = gradesQuery.gte('date', filterDateStr);
-        }
-
-        const { data: gradesData, error: gradesError } = await gradesQuery;
-
-        if (gradesError) throw gradesError;
-        setTodayGrades(gradesData || []);
+        const gradesData = await gradeService.fetchGradesByFilter(filterDateStr, isDaily);
+        setTodayGrades(gradesData);
 
       } catch (err: any) {
-        console.error('Error fetching analytics:', err);
+        logger.error('ERROR_FETCHING_ANALYTICS', { error: err instanceof Error ? err.message : String(err) });
         setError(err.message || 'Failed to load analytics data');
       } finally {
         setLoading(false);

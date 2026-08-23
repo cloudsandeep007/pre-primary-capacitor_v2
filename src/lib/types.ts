@@ -12,6 +12,7 @@ export interface Staff {
   assigned_class?: ClassLevel | 'All';
   photo_url?: string;
   role?: 'staff' | 'admin' | 'gate_staff';
+  is_active?: boolean;
 }
 
 export interface Announcement {
@@ -80,6 +81,8 @@ export interface Student {
   parent_phone?: string;
   student_photo_url?: string;
   parent_photo_url?: string;
+  status?: 'active' | 'dropout' | 'graduated';
+  created_at?: string;
 }
 
 export interface MediaItem {
@@ -134,6 +137,7 @@ export interface Attendance {
   student_id: string;
   status: 'present' | 'absent' | 'late';
   date: string;
+  class_name?: string;
 }
 
 export interface DailyGrade {
@@ -143,4 +147,17 @@ export interface DailyGrade {
   hw_stars: number;
   activity_stars: number;
   date: string;
+  class_name?: string;
+  teacher_notes?: string;
+}
+
+export interface Classwork {
+  id: string;
+  title: string;
+  description: string;
+  subject: string;
+  class_name: string;
+  date: string;
+  image_url: string | null;
+  created_at: string;
 }

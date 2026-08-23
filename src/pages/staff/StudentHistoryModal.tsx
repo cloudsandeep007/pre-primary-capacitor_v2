@@ -6,6 +6,9 @@ import { getMealLabel, getMealEmoji, getNapLabel, getNapEmoji, getMoodLabel, get
 import { Button } from '@/components/Button';
 import { showToast } from '@/components/Toast';
 import { getMockLogs, deleteMockLog, updateMockLog } from '@/lib/mockData';
+import { logger } from '@/lib/logger';
+import { activityService } from '@/services/activityService';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 interface StudentHistoryModalProps {
   student: Student;
@@ -15,7 +18,8 @@ interface StudentHistoryModalProps {
 }
 
 export function StudentHistoryModal({ student, staff, onClose, onLogUpdated }: StudentHistoryModalProps) {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const { can } = usePermissions();
+  const [selectedDate, setSelectedDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
@@ -30,27 +34,9 @@ export function StudentHistoryModal({ student, staff, onClose, onLogUpdated }: S
     try {
       let remoteLogs: DailyLog[] = [];
       try {
-        let res = await supabase
-          .from('daily_logs')
-          .select('*')
-          .eq('student_id', student.id)
-          .eq('log_date', date)
-          .order('created_at', { ascending: true });
-
-        if (res.error || !res.data || res.data.length === 0) {
-          res = await supabase
-            .from('activity_logs')
-            .select('*')
-            .eq('student_id', student.id)
-            .eq('log_date', date)
-            .order('created_at', { ascending: true });
-        }
-
-        if (!res.error && res.data) {
-          remoteLogs = res.data as DailyLog[];
-        }
+        remoteLogs = await activityService.fetchStudentLogs(student.id, date);
       } catch (e) {
-        console.warn('[StudentHistoryModal] Supabase fetch failed');
+        logger.warn('_STUDENTHISTORYMODAL_FETCH_LOGS_FALLBACK', { studentId: student.id });
       }
 
       const mockLogs = getMockLogs().filter(
@@ -73,12 +59,12 @@ export function StudentHistoryModal({ student, staff, onClose, onLogUpdated }: S
   const shiftDate = (days: number) => {
     const d = new Date(selectedDate);
     d.setDate(d.getDate() + days);
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     if (d.toISOString().split('T')[0] > today) return;
     setSelectedDate(d.toISOString().split('T')[0]);
   };
 
-  const isToday = selectedDate === new Date().toISOString().split('T')[0];
+  const isToday = selectedDate === new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const dateLabel = isToday
     ? 'Today'
     : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -88,10 +74,9 @@ export function StudentHistoryModal({ student, staff, onClose, onLogUpdated }: S
 
     deleteMockLog(logId);
     try {
-      await supabase.from('daily_logs').delete().eq('id', logId);
-      await supabase.from('activity_logs').delete().eq('id', logId);
+      await activityService.deleteLog(logId);
     } catch (e) {
-      console.warn('[StudentHistoryModal] Supabase delete fallback');
+      logger.warn('_STUDENTHISTORYMODAL_SUPABASE_DELETE_FALLBACK');
     }
 
     setLogs((prev) => prev.filter((l) => l.id !== logId));
@@ -103,9 +88,9 @@ export function StudentHistoryModal({ student, staff, onClose, onLogUpdated }: S
   const handleSaveEdit = async (logId: string) => {
     updateMockLog(logId, { teacher_notes: editNotes });
     try {
-      await supabase.from('daily_logs').update({ teacher_notes: editNotes }).eq('id', logId);
+      await activityService.updateTeacherNotes(logId, editNotes);
     } catch (e) {
-      console.warn('[StudentHistoryModal] Supabase update fallback');
+      logger.warn('_STUDENTHISTORYMODAL_SUPABASE_UPDATE_FALLBACK');
     }
 
     setLogs((prev) =>

@@ -3,9 +3,11 @@ import { supabase } from '../../lib/supabase';
 import { Student, Attendance, DailyGrade } from '../../lib/types';
 import { Award, CalendarCheck, Star, TrendingUp, AlertCircle, Loader2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-
+import { attendanceService } from '@/services/attendanceService';
+import { gradeService } from '@/services/gradeService';
 import { DateFilterType, DATE_FILTERS, getDateFromFilter } from '../../lib/dateUtils';
 import { Filter } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 interface PerformanceTabProps {
   student: Student;
@@ -27,44 +29,31 @@ export function PerformanceTab({ student }: PerformanceTabProps) {
         const filterDateStr = getDateFromFilter(dateFilter);
         const isDaily = dateFilter === 'Daily';
 
-        // Fetch attendance
-        let attendanceQuery = supabase
-          .from('attendance')
-          .select('*')
-          .eq('student_id', student.id)
-          .order('date', { ascending: false });
-
+        // Fetch attendance via service
+        let attendanceData: Attendance[] = [];
+        const allAttendance = await attendanceService.fetchAttendanceByStudent(student.id, filterDateStr);
         if (isDaily) {
-          attendanceQuery = attendanceQuery.eq('date', filterDateStr);
+          attendanceData = allAttendance.filter(a => a.date === filterDateStr);
         } else {
-          attendanceQuery = attendanceQuery.gte('date', filterDateStr);
+          attendanceData = allAttendance;
         }
+        
+        // Sort descending
+        attendanceData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setAttendance(attendanceData);
 
-        const { data: attendanceData, error: attendanceError } = await attendanceQuery;
-
-        if (attendanceError) throw attendanceError;
-        setAttendance(attendanceData || []);
-
-        // Fetch daily grades
-        let gradesQuery = supabase
-          .from('daily_grades')
-          .select('*')
-          .eq('student_id', student.id)
-          .order('date', { ascending: false });
-          
+        // Fetch daily grades via service
+        const allGrades = await gradeService.fetchGradesByStudent(student.id);
+        let gradesData = allGrades;
         if (isDaily) {
-          gradesQuery = gradesQuery.eq('date', filterDateStr);
+          gradesData = allGrades.filter(g => g.date === filterDateStr);
         } else {
-          gradesQuery = gradesQuery.gte('date', filterDateStr);
+          gradesData = allGrades.filter(g => g.date >= filterDateStr);
         }
-
-        const { data: gradesData, error: gradesError } = await gradesQuery;
-
-        if (gradesError) throw gradesError;
-        setGrades(gradesData || []);
+        setGrades(gradesData);
 
       } catch (err: any) {
-        console.error('Error fetching performance data:', err);
+        logger.error('ERROR_FETCHING_PERFORMANCE_DATA', { error: err instanceof Error ? err.message : String(err) });
         setError(err.message || 'Failed to load performance data');
       } finally {
         setLoading(false);

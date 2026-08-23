@@ -1,33 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Student } from '@/lib/types';
+import { Student, HomeworkItem, HomeworkReply } from '@/lib/types';
 import { BookOpen, Send, Calendar, ChevronDown, ChevronUp, AlertCircle, MessageCircle } from 'lucide-react';
-
-interface Homework {
-  id: string;
-  title: string;
-  description: string;
-  subject: string;
-  due_date: string;
-  class_name: string;
-  created_at: string;
-}
-
-interface HomeworkReply {
-  id: string;
-  homework_id: string;
-  sender_type: string;
-  sender_name: string;
-  body: string;
-  created_at: string;
-}
+import { logger } from '@/lib/logger';
+import { homeworkService } from '@/services/homeworkService';
 
 interface HomeworkTabProps {
   student: Student;
 }
 
 export function HomeworkTab({ student }: HomeworkTabProps) {
-  const [homeworkList, setHomeworkList] = useState<Homework[]>([]);
+  const [homeworkList, setHomeworkList] = useState<HomeworkItem[]>([]);
   const [replies, setReplies] = useState<Record<string, HomeworkReply[]>>({});
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -62,43 +45,17 @@ export function HomeworkTab({ student }: HomeworkTabProps) {
   }, [student.class_name]);
 
   const fetchHomework = async () => {
-    const { data, error } = await supabase
-      .from('homework')
-      .select('*')
-      .eq('class_name', student.class_name)
-      .order('due_date', { ascending: true });
-
-    if (error) {
-      console.error('Error fetching homework:', error);
-    } else {
-      setHomeworkList(data || []);
-      if (data && data.length > 0) {
-        fetchReplies(data.map((h: Homework) => h.id));
-      }
+    const data = await homeworkService.fetchHomework(student.class_name);
+    setHomeworkList(data);
+    if (data.length > 0) {
+      fetchReplies(data.map((h: HomeworkItem) => h.id));
     }
     setLoading(false);
   };
 
   const fetchReplies = async (homeworkIds: string[]) => {
-    if (homeworkIds.length === 0) return;
-    const { data, error } = await supabase
-      .from('homework_replies')
-      .select('*')
-      .in('homework_id', homeworkIds)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Error fetching homework replies:', error);
-    } else {
-      const repliesMap: Record<string, HomeworkReply[]> = {};
-      data?.forEach((reply: HomeworkReply) => {
-        if (!repliesMap[reply.homework_id]) {
-          repliesMap[reply.homework_id] = [];
-        }
-        repliesMap[reply.homework_id].push(reply);
-      });
-      setReplies(repliesMap);
-    }
+    const repliesMap = await homeworkService.fetchReplies(homeworkIds);
+    setReplies(repliesMap);
   };
 
   const fetchRepliesAll = async () => {
@@ -108,14 +65,8 @@ export function HomeworkTab({ student }: HomeworkTabProps) {
   };
 
   const fetchCompletions = async () => {
-    const { data, error } = await supabase
-      .from('homework_completions')
-      .select('homework_id')
-      .eq('student_id', student.id);
-      
-    if (!error && data) {
-      setCompletedIds(new Set(data.map(d => d.homework_id)));
-    }
+    const completedSet = await homeworkService.fetchCompletions(student.id);
+    setCompletedIds(completedSet);
   };
 
   const toggleCompletion = async (homeworkId: string) => {
@@ -130,32 +81,22 @@ export function HomeworkTab({ student }: HomeworkTabProps) {
     }
     setCompletedIds(newSet);
 
-    if (isCompleted) {
-      await supabase
-        .from('homework_completions')
-        .delete()
-        .eq('homework_id', homeworkId)
-        .eq('student_id', student.id);
-    } else {
-      await supabase
-        .from('homework_completions')
-        .insert([{ homework_id: homeworkId, student_id: student.id }]);
-    }
+    await homeworkService.toggleCompletion(homeworkId, student.id, isCompleted);
   };
 
   const handleSendReply = async (homeworkId: string) => {
     if (!replyText.trim()) return;
 
-    const { error } = await supabase.from('homework_replies').insert([{
+    const { error } = await homeworkService.createReply({
       homework_id: homeworkId,
       sender_type: 'parent',
       sender_name: `${student.guardian_name || 'Parent'} (${student.name})`,
       student_id: student.id,
       body: replyText.trim()
-    }]);
+    });
 
     if (error) {
-      console.error('Error sending homework question:', error);
+      logger.error('ERROR_SENDING_HOMEWORK_QUESTION', { error: error instanceof Error ? error.message : String(error) });
     } else {
       setReplyText('');
       fetchRepliesAll();
@@ -197,7 +138,7 @@ export function HomeworkTab({ student }: HomeworkTabProps) {
   return (
     <div className="space-y-4">
       {homeworkList.map((hw) => {
-        const dueDate = new Date(hw.due_date);
+        const dueDate = new Date(hw.due_date || '');
         dueDate.setHours(0, 0, 0, 0);
         const timeDiff = dueDate.getTime() - today.getTime();
         const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
@@ -220,7 +161,7 @@ export function HomeworkTab({ student }: HomeworkTabProps) {
             <div className="p-5">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : hw.id)}>
-                  <span className={`text-xs px-2.5 py-1 rounded-md font-semibold ${isCompleted ? 'bg-green-100 text-green-700' : getSubjectColor(hw.subject)}`}>
+                  <span className={`text-xs px-2.5 py-1 rounded-md font-semibold ${isCompleted ? 'bg-green-100 text-green-700' : getSubjectColor(hw.subject || '')}`}>
                     {hw.subject}
                   </span>
                   {!isCompleted && statusBadge}
@@ -274,7 +215,7 @@ export function HomeworkTab({ student }: HomeworkTabProps) {
                           <div className="flex justify-between items-baseline mb-1">
                             <span className="text-xs font-semibold opacity-75">{reply.sender_name || 'Teacher'}</span>
                             <span className="text-[10px] opacity-60 ml-2">
-                              {new Date(reply.created_at).toLocaleDateString()} {new Date(reply.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(reply.created_at ?? '').toLocaleDateString()} {new Date(reply.created_at ?? '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
                           <p className="text-sm">{reply.body}</p>

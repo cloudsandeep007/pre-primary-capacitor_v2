@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { X, ShieldCheck, CheckCircle2, Clock, RefreshCw, UserCheck } from 'lucide-react';
+import { X, ShieldCheck, CheckCircle2, Clock, RefreshCw, UserCheck, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Student, GatePass } from '@/lib/types';
 import { Button } from '@/components/Button';
 import { QRCodeCanvas } from '@/components/QRCodeCanvas';
 import { createOrGetMockGatePass, getMockGatePasses } from '@/lib/mockData';
+import { usePermissions } from '@/contexts/PermissionContext';
+import { showToast } from '@/components/Toast';
+import { gatePassService } from '@/services/gatePassService';
 
 interface ParentGatePassModalProps {
   student: Student;
@@ -12,6 +15,7 @@ interface ParentGatePassModalProps {
 }
 
 export function ParentGatePassModal({ student, onClose }: ParentGatePassModalProps) {
+  const { can } = usePermissions();
   const [pass, setPass] = useState<GatePass | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,9 +55,25 @@ export function ParentGatePassModal({ student, onClose }: ParentGatePassModalPro
     };
   }, [student.id, student.roll_no]);
 
+  const handleCancelPass = async () => {
+    if (!pass) return;
+    if (!confirm('Are you sure you want to cancel this gate pass request?')) return;
+    
+    setLoading(true);
+    const success = await gatePassService.deletePass(pass.id);
+    setLoading(false);
+    
+    if (success) {
+      showToast('success', 'Gate pass request cancelled.');
+      onClose();
+    } else {
+      showToast('error', 'Failed to cancel gate pass.');
+    }
+  };
+
   const fetchOrCreatePass = async (silent = false) => {
     if (!silent) setLoading(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
     try {
       // 1. Fetch latest pass for today from Supabase
       const { data, error } = await supabase
@@ -225,6 +245,14 @@ export function ParentGatePassModal({ student, onClose }: ParentGatePassModalPro
 
         {/* Footer */}
         <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-100 px-5 py-4 flex gap-3 rounded-b-3xl">
+          {pass && pass.status === 'PENDING' && can('gatepasses.delete') && (
+            <button 
+              onClick={handleCancelPass}
+              className="w-full flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 hover:text-rose-700 py-2.5 rounded-xl font-bold transition-colors"
+            >
+              <Trash2 size={16} className="mr-1.5" /> Cancel Pass
+            </button>
+          )}
           <Button variant="secondary" onClick={() => fetchOrCreatePass()} className="w-full">
             <RefreshCw size={16} className="mr-1.5" /> Refresh Status
           </Button>

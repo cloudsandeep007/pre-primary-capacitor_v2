@@ -95,7 +95,7 @@ export const DEMO_STUDENTS: Student[] = [
   },
 ];
 
-const today = new Date().toISOString().split('T')[0];
+const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
 
 export const DEMO_LOGS: DailyLog[] = [
   {
@@ -244,7 +244,7 @@ export function getMockGatePasses(): GatePass[] {
 
 export function createOrGetMockGatePass(student: Student): GatePass {
   const passes = getMockGatePasses();
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const existing = passes.find(
     (p) => (p.student_id === student.id || p.roll_no === student.roll_no) && p.pass_date === today
   );
@@ -270,7 +270,7 @@ export function createOrGetMockGatePass(student: Student): GatePass {
 
 export function completeMockGatePass(passIdOrRoll: string, staffName: string): GatePass | null {
   const passes = getMockGatePasses();
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const passIndex = passes.findIndex(
     (p) => (p.id === passIdOrRoll || p.roll_no === passIdOrRoll || p.student_id === passIdOrRoll) && p.pass_date === today
   );

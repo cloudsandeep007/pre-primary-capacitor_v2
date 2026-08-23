@@ -10,6 +10,7 @@ import { Spinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
 import { PhotoUploadInput } from '@/components/PhotoUploadInput';
 import { addMockStaff } from '@/lib/mockData';
+import { logger, generateTraceId } from '@/lib/logger';
 
 interface StaffOnboardingProps {
   onSuccessLogin?: (staff: Staff) => void;
@@ -35,6 +36,9 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
     }
 
     setSubmitting(true);
+    const traceId = generateTraceId();
+    logger.info('STAFF_ONBOARDING_STARTED', { email: email.trim(), role, traceId });
+
     try {
       const cleanEmail = email.trim().toLowerCase();
 
@@ -76,7 +80,7 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
       insertErr = res1.error;
 
       if (insertErr) {
-        console.warn('[StaffOnboarding] Primary insert failed, retrying with password column:', insertErr.message);
+        logger.warn('_STAFFONBOARDING_PRIMARY_INSERT_FAILED_RETRYING_WITH_PASSWORD_COLUMN', { error: insertErr.message instanceof Error ? insertErr.message.message : String(insertErr.message), traceId });
         const fallbackStaffPayload = {
           name: name.trim(),
           email: cleanEmail,
@@ -111,7 +115,7 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
         addMockStaff(createdStaffObj);
       } else {
         if (insertErr) {
-          console.error('[StaffOnboarding] Supabase insert failed:', insertErr);
+          logger.error('_STAFFONBOARDING_SUPABASE_INSERT_FAILED', { traceId });
         }
         // Fallback to local mock storage
         createdStaffObj = addMockStaff({
@@ -124,7 +128,8 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
         });
       }
 
-      showToast('success', `Teacher account created for ${createdStaffObj.name}!`);
+      logger.info('STAFF_ONBOARDING_SUCCESS', { traceId });
+      showToast('success', `Welcome ${createdStaffObj.name}! Account created successfully.`);
 
       if (onSuccessLogin) {
         onSuccessLogin(createdStaffObj);
@@ -132,8 +137,8 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
         navigate('/staff');
       }
     } catch (err) {
-      console.error('[StaffOnboarding] Error:', err);
-      showToast('error', 'Failed to create teacher account. Please try again.');
+      logger.error('_STAFFONBOARDING_ERROR', { error: err instanceof Error ? err.message : String(err), traceId });
+      showToast('error', 'Failed to complete registration.');
     } finally {
       setSubmitting(false);
     }

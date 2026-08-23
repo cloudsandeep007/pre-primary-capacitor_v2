@@ -1,22 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Plus, ClipboardList, CheckCircle2, Loader2, ImagePlus, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { BookOpen, Plus, ClipboardList, CheckCircle2, Loader2, ImagePlus, X, Edit2, Trash2 } from 'lucide-react';
+import { classworkService } from '@/services/classworkService';
+import { supabase } from '@/lib/supabase';
+import { storageService } from '@/services/storageService';
+import { logger, generateTraceId } from '@/lib/logger';
+import { usePermissions } from '@/contexts/PermissionContext';
 
-interface Staff {
-  id: string;
-  name: string;
-  role: string;
-}
-
-interface Classwork {
-  id: string;
-  title: string;
-  description: string;
-  subject: string;
-  class_name: string;
-  date: string;
-  image_url?: string;
-}
+import { Staff, Classwork } from '../../lib/types';
 
 interface StaffClassworkPanelProps {
   staff: Staff;
@@ -24,6 +14,7 @@ interface StaffClassworkPanelProps {
 }
 
 export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPanelProps) {
+  const { can } = usePermissions();
   const [classwork, setClasswork] = useState<Classwork[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,23 +26,17 @@ export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPane
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const subjects = ['English', 'Math', 'Science', 'Art', 'Music', 'Phonics', 'General Awareness'];
 
   const fetchClasswork = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const { data, error } = await supabase
-        .from('classwork')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .eq('date', today)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setClasswork(data || []);
+      const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+      const data = await classworkService.fetchClasswork(assignedClass, today);
+      setClasswork(data);
     } catch (error) {
-      console.error('Error fetching classwork:', error);
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -62,7 +47,7 @@ export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPane
 
     const subscription = supabase
       .channel('classwork_changes')
-      .on('postgres', { event: '*', schema: 'public', table: 'classwork', filter: `class_name=eq.${assignedClass}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'classwork', filter: `class_name=eq.${assignedClass}` }, () => {
         fetchClasswork();
       })
       .subscribe();
@@ -72,45 +57,77 @@ export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPane
     };
   }, [assignedClass]);
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this classwork?')) return;
+    const success = await classworkService.deleteClasswork(id);
+    if (success) {
+      setClasswork(classwork.filter(c => c.id !== id));
+    } else {
+      alert('Failed to delete classwork');
+    }
+  };
+
+  const handleEdit = (cw: Classwork) => {
+    setEditingId(cw.id);
+    setFormData({
+      title: cw.title,
+      subject: cw.subject,
+      description: cw.description || ''
+    });
+    setPreviewUrl(cw.image_url || null);
+    setShowAddForm(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.description) return;
 
     setIsSubmitting(true);
-    let image_url = null;
+    let image_url = previewUrl; // Keep existing image if not replacing
+    const traceId = generateTraceId();
+    logger.info('CLASSWORK_ASSIGN_STARTED', { traceId });
     
     try {
       if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from('media')
-          .upload(fileName, selectedFile);
-          
+        const { url, error: uploadError } = await storageService.uploadFile('media', selectedFile, traceId);
         if (uploadError) throw uploadError;
-        
-        const { data } = supabase.storage.from('media').getPublicUrl(fileName);
-        image_url = data.publicUrl;
+        image_url = url;
       }
 
-      const today = new Date().toISOString().split('T')[0];
-      const { error } = await supabase.from('classwork').insert([{
-        title: formData.title,
-        description: formData.description,
-        subject: formData.subject,
-        class_name: assignedClass,
-        date: today,
-        image_url
-      }]);
+      if (editingId) {
+        const success = await classworkService.updateClasswork(editingId, {
+          title: formData.title,
+          description: formData.description,
+          subject: formData.subject,
+          image_url
+        });
+        if (!success) throw new Error('Update failed');
+        logger.info('CLASSWORK_UPDATE_SUCCESS', { traceId });
+      } else {
+        const today = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+        const { error } = await classworkService.createClasswork({
+          title: formData.title,
+          description: formData.description,
+          subject: formData.subject,
+          class_name: assignedClass,
+          date: today,
+          image_url
+        }, traceId);
 
-      if (error) throw error;
+        if (error) throw error;
+        logger.info('CLASSWORK_ASSIGN_SUCCESS', { traceId });
+      }
+      
+      const updatedClasswork = await classworkService.fetchClasswork(assignedClass);
+      setClasswork(updatedClasswork);
       
       setFormData({ title: '', subject: 'English', description: '' });
       setSelectedFile(null);
       setPreviewUrl(null);
+      setEditingId(null);
       setShowAddForm(false);
     } catch (error) {
-      console.error('Error adding classwork:', error);
+      logger.error('CLASSWORK_ASSIGN_FAILED', { error: error instanceof Error ? error.message : String(error), traceId });
     } finally {
       setIsSubmitting(false);
     }
@@ -123,13 +140,13 @@ export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPane
           <BookOpen className="text-teal-500 h-7 w-7" />
           Today's Classwork
         </h2>
-        <button
+        {can('classwork.write') && (<button
           onClick={() => setShowAddForm(!showAddForm)}
           className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white px-4 py-2 rounded-xl hover:shadow-md transition-all font-medium"
         >
           {showAddForm ? <ClipboardList size={18} /> : <Plus size={18} />}
           {showAddForm ? 'View List' : 'Add Classwork'}
-        </button>
+        </button>)}
       </div>
 
       {showAddForm && (
@@ -210,14 +227,23 @@ export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPane
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white py-2.5 rounded-xl hover:bg-teal-700 transition-colors font-medium disabled:opacity-50"
-            >
-              {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
-              Save Classwork
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setShowAddForm(false); setEditingId(null); setFormData({ title: '', subject: 'English', description: '' }); setSelectedFile(null); setPreviewUrl(null); }}
+                className="w-1/3 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-2.5 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-2/3 flex items-center justify-center gap-2 bg-teal-600 text-white py-2.5 rounded-xl hover:bg-teal-700 transition-colors font-medium disabled:opacity-50"
+              >
+                {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
+                {editingId ? 'Update Classwork' : 'Save Classwork'}
+              </button>
+            </div>
           </div>
         </form>
       )}
@@ -242,6 +268,18 @@ export function StaffClassworkPanel({ staff, assignedClass }: StaffClassworkPane
                     {work.subject}
                   </span>
                   <h3 className="font-bold text-gray-800 text-lg">{work.title}</h3>
+                </div>
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {can('classwork.write') && (
+                    <button onClick={() => handleEdit(work)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-md transition-colors" title="Edit">
+                      <Edit2 size={16} />
+                    </button>
+                  )}
+                  {can('classwork.delete') && (
+                    <button onClick={() => handleDelete(work.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors" title="Delete">
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
               <p className="text-gray-600 text-sm mt-2 whitespace-pre-wrap">{work.description}</p>

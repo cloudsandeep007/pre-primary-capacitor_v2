@@ -1,0 +1,1 @@
+CREATE OR REPLACE FUNCTION get_user_aud() RETURNS jsonb AS $$ DECLARE res jsonb; BEGIN SELECT jsonb_agg(jsonb_build_object('email', email, 'aud', aud)) INTO res FROM auth.users WHERE email IN ('superadmin@school.com', 'teacher@school.com'); RETURN res; END; $$ LANGUAGE plpgsql SECURITY DEFINER;

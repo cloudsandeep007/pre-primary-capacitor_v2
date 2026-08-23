@@ -1,34 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Staff } from '@/lib/types';
-import { BookOpen, Send, Plus, Calendar, ChevronDown, ChevronUp, MessageCircle, ImagePlus, X, Loader2 } from 'lucide-react';
+import { storageService } from '@/services/storageService';
+import { Staff, HomeworkItem, HomeworkReply } from '@/lib/types';
+import { homeworkService } from '@/services/homeworkService';
+import { BookOpen, Send, Plus, Calendar, ChevronDown, ChevronUp, MessageCircle, ImagePlus, X, Loader2, Edit2, Trash2 } from 'lucide-react';
 import { showToast } from '@/components/Toast';
+import { usePermissions } from '@/contexts/PermissionContext';
+import { logger, generateTraceId } from '@/lib/logger';
 
-interface Homework {
-  id: string;
-  title: string;
-  subject: string;
-  description: string;
-  due_date: string;
-  created_at: string;
-  class_name: string;
-  attachment_url?: string;
-  replies?: HomeworkReply[];
-}
-
-interface HomeworkReply {
-  id: string;
-  homework_id: string;
-  sender_type: string;
-  sender_name: string;
-  body: string;
-  created_at: string;
-}
-
-const SUBJECTS = ['Math', 'English', 'Hindi', 'EVS', 'Art', 'General'];
+const SUBJECTS = [
+  'Language (English)',
+  'Mathematics',
+  'Environmental Science (EVS)',
+  'Hindi/Regional Language',
+  'Art & Craft',
+  'Rhymes & Stories'
+];
 
 export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assignedClass: string }) {
-  const [homeworkList, setHomeworkList] = useState<Homework[]>([]);
+  const { can } = usePermissions();
+  const [homeworkList, setHomeworkList] = useState<HomeworkItem[]>([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState(SUBJECTS[0]);
@@ -37,6 +28,7 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -60,32 +52,38 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
   }, [assignedClass]);
 
   const fetchHomework = async () => {
-    try {
-      const { data: hwData, error: hwError } = await supabase
-        .from('homework')
-        .select('*')
-        .eq('class_name', assignedClass)
-        .order('created_at', { ascending: false });
-
-      if (hwError) throw hwError;
-
-      const { data: repliesData, error: repliesError } = await supabase
-        .from('homework_replies')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      if (repliesError) throw repliesError;
-
-      const formatted = (hwData || []).map(hw => ({
+    const data = await homeworkService.fetchHomework(assignedClass);
+    if (data.length > 0) {
+      const repliesMap = await homeworkService.fetchReplies(data.map((h: HomeworkItem) => h.id));
+      const merged = data.map((hw: HomeworkItem) => ({
         ...hw,
-        replies: (repliesData || []).filter((r: HomeworkReply) => r.homework_id === hw.id)
+        replies: repliesMap[hw.id] || []
       }));
-
-      setHomeworkList(formatted);
-    } catch (error) {
-      console.error('Error fetching homework:', error);
+      setHomeworkList(merged);
+    } else {
       setHomeworkList([]);
     }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this homework?')) return;
+    const success = await homeworkService.deleteHomework(id);
+    if (success) {
+      showToast('success', 'Homework deleted');
+      fetchHomework();
+    } else {
+      showToast('error', 'Failed to delete homework');
+    }
+  };
+
+  const handleEdit = (hw: HomeworkItem) => {
+    setEditingId(hw.id);
+    setTitle(hw.title);
+    setSubject(hw.subject || '');
+    setDescription(hw.description || '');
+    setDueDate(hw.due_date || '');
+    setPreviewUrl(hw.attachment_url || null);
+    setShowNewForm(true);
   };
 
   const handleAssign = async (e: React.FormEvent) => {
@@ -96,65 +94,72 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
     }
 
     setIsSubmitting(true);
-    let attachment_url = undefined;
+    let attachment_url: string | null = previewUrl; // Use existing previewUrl if set
+    const traceId = generateTraceId();
+    logger.info('HOMEWORK_ASSIGN_STARTED', { traceId });
 
     try {
       if (selectedFile) {
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from('media')
-          .upload(fileName, selectedFile);
-          
+        const { url, error: uploadError } = await storageService.uploadFile('media', selectedFile, traceId);
         if (uploadError) throw uploadError;
-        
-        const { data } = supabase.storage.from('media').getPublicUrl(fileName);
-        attachment_url = data.publicUrl;
+        attachment_url = url;
       }
 
-      const newHomework: Homework = {
-        id: `local-${Date.now()}`,
-        title,
-        subject,
-        description,
-        due_date: dueDate,
-        created_at: new Date().toISOString(),
-        class_name: assignedClass,
-        attachment_url,
-        replies: []
-      };
+      if (editingId) {
+        const success = await homeworkService.updateHomework(editingId, {
+          title,
+          subject,
+          description,
+          due_date: dueDate,
+          attachment_url
+        });
+        if (!success) throw new Error('Update failed');
+        logger.info('HOMEWORK_UPDATE_SUCCESS', { traceId });
+        showToast('success', 'Homework updated successfully');
+      } else {
+        const newHomework: HomeworkItem = {
+          id: `local-${Date.now()}`,
+          title,
+          subject,
+          description,
+          due_date: dueDate,
+          created_at: new Date().toISOString(),
+          class_name: assignedClass,
+          attachment_url,
+          replies: [],
+          staff_id: staff.id,
+          staff_name: staff.name
+        };
 
-      try {
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-        await Promise.race([
-          supabase.from('homework').insert({
-            title,
-            subject,
-            description,
-            due_date: dueDate,
-            class_name: assignedClass,
-            staff_id: staff.id,
-            staff_name: staff.name,
-            attachment_url
-          }),
-          timeout
-        ]);
-      } catch (e) {
-        console.warn('Supabase insert failed/timed out. Using local state.', e);
+        const { error: e } = await homeworkService.createHomework({
+          id: newHomework.id,
+          title,
+          subject,
+          description,
+          due_date: dueDate,
+          class_name: assignedClass,
+          staff_id: staff.id,
+          staff_name: staff.name,
+          attachment_url
+        }, traceId);
+        if (e) throw e;
+
+        logger.info('HOMEWORK_ASSIGN_SUCCESS', { traceId });
+        showToast('success', 'Homework assigned successfully');
       }
 
-      setHomeworkList([newHomework, ...homeworkList]);
-      showToast('success', 'Homework assigned successfully');
+      fetchHomework();
       setTitle('');
       setSubject(SUBJECTS[0]);
       setDescription('');
       setDueDate('');
       setSelectedFile(null);
       setPreviewUrl(null);
+      setEditingId(null);
       setShowNewForm(false);
     } catch (error) {
-      console.error('Error assigning homework:', error);
-      showToast('error', 'Failed to assign homework');
+      logger.error('HOMEWORK_ASSIGN_FAILED', { error: error instanceof Error ? error.message : String(error), traceId });
+      showToast('error', 'Failed to save homework');
     } finally {
       setIsSubmitting(false);
     }
@@ -164,20 +169,13 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
     if (!replyText.trim()) return;
 
     try {
-      try {
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
-        await Promise.race([
-          supabase.from('homework_replies').insert({
-            homework_id: homeworkId,
-            sender_type: 'teacher',
-            sender_name: staff.name,
-            body: replyText.trim()
-          }),
-          timeout
-        ]);
-      } catch (e) {
-        console.warn('Supabase insert failed/timed out. Using local state.', e);
-      }
+      const { error: e } = await homeworkService.createReply({
+        homework_id: homeworkId,
+        sender_type: 'teacher',
+        sender_name: staff.name,
+        body: replyText.trim()
+      });
+      if (e) throw e;
 
       const newReply: HomeworkReply = {
         id: `local-reply-${Date.now()}`,
@@ -186,6 +184,7 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
         sender_name: staff.name,
         body: replyText.trim(),
         created_at: new Date().toISOString(),
+        student_id: null
       };
       
       setHomeworkList(prev => prev.map(hw => {
@@ -198,7 +197,7 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
       setReplyText('');
       showToast('success', 'Reply sent');
     } catch (error) {
-      console.error('Error sending reply:', error);
+      logger.error('ERROR_SENDING_REPLY', { error: error instanceof Error ? error.message : String(error) });
       showToast('error', 'Failed to send reply');
     }
   };
@@ -210,13 +209,13 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
           <BookOpen className="w-8 h-8" />
           <h2 className="text-2xl font-bold">Homework</h2>
         </div>
-        <button
+        {can('homework.write') && (<button
           onClick={() => setShowNewForm(!showNewForm)}
           className="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl shadow-md hover:from-amber-600 hover:to-orange-600 transition-all font-medium"
         >
           <Plus className="w-5 h-5 mr-1" />
           Assign Homework
-        </button>
+        </button>)}
       </div>
 
       {showNewForm && (
@@ -305,7 +304,7 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
           <div className="flex justify-end space-x-3">
             <button
               type="button"
-              onClick={() => setShowNewForm(false)}
+              onClick={() => { setShowNewForm(false); setEditingId(null); setTitle(''); setSubject(SUBJECTS[0]); setDescription(''); setDueDate(''); setPreviewUrl(null); setSelectedFile(null); }}
               className="px-4 py-2 text-gray-600 hover:bg-gray-50 rounded-xl transition-colors font-medium"
             >
               Cancel
@@ -316,7 +315,7 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
               className="px-4 py-2 bg-amber-600 text-white rounded-xl shadow-md hover:bg-amber-700 transition-colors font-medium flex items-center disabled:opacity-50"
             >
               {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Post Homework
+              {editingId ? 'Update Homework' : 'Post Homework'}
             </button>
           </div>
         </form>
@@ -341,9 +340,21 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
                       <h3 className="text-xl font-bold text-gray-800">{hw.title}</h3>
                     </div>
                   </div>
-                  <div className="flex items-center text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
-                    <Calendar className="w-4 h-4 mr-1.5" />
-                    Due: {new Date(hw.due_date).toLocaleDateString()}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center text-sm font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">
+                      <Calendar className="w-4 h-4 mr-1.5" />
+                      Due: {new Date(hw.due_date || '').toLocaleDateString()}
+                    </div>
+                    {can('homework.write') && (
+                      <button onClick={() => handleEdit(hw)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-md transition-colors" title="Edit Homework">
+                        <Edit2 size={16} />
+                      </button>
+                    )}
+                    {can('homework.delete') && (
+                      <button onClick={() => handleDelete(hw.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors" title="Delete Homework">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 
@@ -373,7 +384,7 @@ export function HomeworkPanel({ staff, assignedClass }: { staff: Staff; assigned
                         <div className="flex justify-between items-baseline mb-1">
                           <span className="text-xs font-semibold opacity-75">{reply.sender_name || 'Staff'}</span>
                           <span className="text-[10px] opacity-60 ml-2">
-                            {new Date(reply.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(reply.created_at ?? '').toLocaleDateString()} {new Date(reply.created_at ?? '').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                         <p className="text-sm">{reply.body}</p>

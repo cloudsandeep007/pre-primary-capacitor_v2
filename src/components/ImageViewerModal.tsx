@@ -1,4 +1,5 @@
 import { X, Download } from 'lucide-react';
+import { downloadFile } from '@/lib/plugins/filesystem';
 
 interface ImageViewerModalProps {
   imageUrl: string;
@@ -10,14 +11,13 @@ export function ImageViewerModal({ imageUrl, onClose }: ImageViewerModalProps) {
     try {
       const response = await fetch(imageUrl);
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'image.jpg'; // We can add better extension handling later if needed
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const base64data = reader.result as string;
+        await downloadFile('image.jpg', base64data, blob.type, true);
+      };
     } catch (error) {
       console.error('Error downloading image:', error);
     }

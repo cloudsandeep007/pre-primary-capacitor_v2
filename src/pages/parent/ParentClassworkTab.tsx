@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Calendar, Loader2 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { classworkService } from '@/services/classworkService';
 
 interface Student {
   id: string;
@@ -27,22 +27,9 @@ export function ParentClassworkTab({ student }: ParentClassworkTabProps) {
 
   useEffect(() => {
     const fetchClasswork = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('classwork')
-          .select('*')
-          .eq('class_name', student.class_name)
-          .order('date', { ascending: false })
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        if (error) throw error;
-        setClassworkList(data || []);
-      } catch (error) {
-        console.error('Error fetching classwork:', error);
-      } finally {
-        setLoading(false);
-      }
+      const data = await classworkService.fetchClasswork(student.class_name);
+      setClassworkList(data);
+      setLoading(false);
     };
 
     fetchClasswork();
@@ -51,7 +38,7 @@ export function ParentClassworkTab({ student }: ParentClassworkTabProps) {
   const formatDate = (dateString: string) => {
     const options: Intl.DateTimeFormatOptions = { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' };
     const date = new Date(dateString);
-    if (dateString === new Date().toISOString().split('T')[0]) {
+    if (dateString === new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]) {
       return 'Today, ' + date.toLocaleDateString(undefined, options);
     }
     return date.toLocaleDateString(undefined, options);

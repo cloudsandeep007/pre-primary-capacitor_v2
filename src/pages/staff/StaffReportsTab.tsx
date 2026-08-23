@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Staff, Student, Attendance, DailyGrade } from '../../lib/types';
+import { studentService } from '@/services/studentService';
+import { attendanceService } from '@/services/attendanceService';
+import { gradeService } from '@/services/gradeService';
+import { Staff, ClassLevel, Student, Attendance, DailyGrade } from '../../lib/types';
 import { getDateFromFilter, DateFilterType } from '../../lib/dateUtils';
 import { PrintableReportCard } from '../../components/PrintableReportCard';
 import { Download, Loader2, AlertCircle } from 'lucide-react';
@@ -8,6 +11,8 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { createPortal } from 'react-dom';
 import { format, subDays } from 'date-fns';
+import { downloadFile } from '@/lib/plugins/filesystem';
+import { logger } from '@/lib/logger';
 
 interface StaffReportsTabProps {
   staff: Staff;
@@ -44,16 +49,8 @@ export const StaffReportsTab: React.FC<StaffReportsTabProps> = ({ staff, assigne
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch Students
-      let query = supabase.from('students').select('*');
-      if (assignedClass !== 'All') {
-        query = query.eq('class_name', assignedClass);
-      }
-      
-      const { data: studentsData, error: studentsError } = await query;
-      if (studentsError) throw studentsError;
-      
-      const students: Student[] = studentsData || [];
+      // 1. Fetch Students via service
+      const students: Student[] = await studentService.fetchAllStudents(assignedClass);
 
       if (students.length === 0) {
         setReportData([]);
@@ -62,27 +59,14 @@ export const StaffReportsTab: React.FC<StaffReportsTabProps> = ({ staff, assigne
 
       const studentIds = students.map(s => s.id);
 
-      // 2. Fetch Attendance
-      const { data: attendanceData, error: attendanceError } = await supabase
-        .from('attendance')
-        .select('*')
-        .in('student_id', studentIds)
-        .gte('date', startDate)
-        .lte('date', endDate);
-        
-      if (attendanceError) throw attendanceError;
-      const attendances: Attendance[] = attendanceData || [];
+      // 2. Fetch Attendance via service
+      const allAttendance = await attendanceService.fetchAttendanceByDateRange(startDate, endDate, assignedClass);
+      // Filter to just these students (in case of class transfers)
+      const attendances: Attendance[] = allAttendance.filter(a => studentIds.includes(a.student_id));
 
       // 3. Fetch Daily Grades
-      const { data: gradesData, error: gradesError } = await supabase
-        .from('daily_grades')
-        .select('*')
-        .in('student_id', studentIds)
-        .gte('date', startDate)
-        .lte('date', endDate);
-        
-      if (gradesError) throw gradesError;
-      const dailyGrades: DailyGrade[] = gradesData || [];
+      const allGrades = await gradeService.fetchGradesByDateRange(startDate, endDate, assignedClass);
+      const dailyGrades = allGrades.filter(g => studentIds.includes(g.student_id));
 
       // 4. Calculate Averages
       const compiledData: StudentReportData[] = students.map(student => {
@@ -126,7 +110,7 @@ export const StaffReportsTab: React.FC<StaffReportsTabProps> = ({ staff, assigne
       setReportData(compiledData);
 
     } catch (err: any) {
-      console.error("Error fetching report data:", err);
+      logger.error('ERROR_FETCHING_REPORT_DATA', { error: err instanceof Error ? err.message : String(err) });
       setError(err.message || 'Failed to load report data');
     } finally {
       setLoading(false);
@@ -162,10 +146,12 @@ export const StaffReportsTab: React.FC<StaffReportsTabProps> = ({ staff, assigne
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${data.student.name.replace(/\s+/g, '_')}_Report.pdf`);
+      
+      const pdfBase64 = pdf.output('datauristring');
+      await downloadFile(`${data.student.name.replace(/\s+/g, '_')}_Report.pdf`, pdfBase64, 'application/pdf', true);
       
     } catch (err) {
-      console.error('Error generating PDF:', err);
+      logger.error('ERROR_GENERATING_PDF', { error: err instanceof Error ? err.message : String(err) });
       alert('Failed to generate PDF. Please try again.');
     } finally {
       setGeneratingPdfId(null);

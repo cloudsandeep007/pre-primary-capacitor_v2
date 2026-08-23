@@ -8,6 +8,7 @@ import { Logo } from '@/components/Logo';
 import { Button } from '@/components/Button';
 import { Spinner } from '@/components/Spinner';
 import { showToast } from '@/components/Toast';
+import { logger, generateTraceId } from '@/lib/logger';
 
 interface StaffLoginProps {
   onLogin: (staff: Staff) => void;
@@ -27,8 +28,28 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
     }
 
     setLoading(true);
+    const traceId = generateTraceId();
+    logger.info('LOGIN_STARTED', { email, traceId });
+
     try {
+      // CLEAR ANY EXISTING STALE SESSION FIRST!
+      await supabase.auth.signOut();
+
       let staffAccount: Staff | null = null;
+      let isAuthenticated = false;
+      const formattedEmail = email.trim().toLowerCase();
+
+      // PHASE 3: Attempt Supabase Auth First
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formattedEmail,
+        password: password,
+      });
+
+      if (!authError && authData.session) {
+        isAuthenticated = true;
+      }
+
+      // Legacy fallback logic
       try {
         const timeout = new Promise<null>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 3000)
@@ -36,7 +57,7 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
         const query = supabase
           .from('staff')
           .select('*')
-          .eq('email', email.trim().toLowerCase())
+          .eq('email', formattedEmail)
           .maybeSingle();
 
         const { data, error } = await Promise.race([query, timeout]) as Awaited<typeof query>;
@@ -49,15 +70,16 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
             name: data.name || data.email.split('@')[0],
             assigned_class: data.assigned_class || data.class_name || data.class || 'All',
             role: data.role || 'staff',
+            is_active: data.is_active !== false, // Default to true if undefined
           };
         }
       } catch (err) {
-        console.warn('[StaffLogin] Supabase unavailable or timed out, using demo data');
+        logger.warn('SUPABASE_UNAVAILABLE', { error: err instanceof Error ? err.message : String(err), email });
       }
 
       if (!staffAccount) {
         const mockStaff = getMockStaff();
-        staffAccount = mockStaff.find((s) => s.email.toLowerCase() === email.trim().toLowerCase()) || null;
+        staffAccount = mockStaff.find((s) => s.email.toLowerCase() === formattedEmail) || null;
       }
 
       if (!staffAccount) {
@@ -65,15 +87,38 @@ export function StaffLogin({ onLogin }: StaffLoginProps) {
         return;
       }
 
-      if (staffAccount.password !== password) {
-        showToast('error', 'Incorrect password. Please try again.');
+      // Block inactive users immediately
+      if (staffAccount.is_active === false) {
+        showToast('error', 'Your account has been deactivated. Please contact the administrator.');
+        await supabase.auth.signOut();
         return;
       }
 
+      // PHASE 3: Fallback verification
+      if (!isAuthenticated) {
+        if (staffAccount.password === password) {
+          isAuthenticated = true;
+          // Silent shadow migration: sync password to Supabase Auth
+          try {
+            const { error: seedError } = await supabase.auth.signInWithPassword({ email: formattedEmail, password: 'Samsidh@123' });
+            if (!seedError) await supabase.auth.updateUser({ password: password });
+          } catch(e) { /* ignore */ }
+        } else {
+          logger.info('LOGIN_FAILED', { reason: 'Incorrect password', email, traceId });
+          showToast('error', 'Incorrect email or password. Please try again.');
+          return;
+        }
+      }
+
+      logger.info('LOGIN_SUCCESS', { email, traceId });
       showToast('success', `Welcome back, ${staffAccount.name}!`);
       onLogin(staffAccount);
     } catch (err) {
-      console.error('[StaffLogin] Login failed:', err);
+      logger.error('LOGIN_FAILED', { 
+        error: err instanceof Error ? err.message : String(err), 
+        email,
+        traceId 
+      });
       showToast('error', 'Could not sign in. Please check your connection and try again.');
     } finally {
       setLoading(false);
