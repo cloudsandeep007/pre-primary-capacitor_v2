@@ -25,11 +25,7 @@ export const parentService = {
   async verifyGoogleIdentity(email: string): Promise<boolean> {
     const traceId = generateTraceId();
     try {
-      const { data, error } = await supabase
-        .from('parents')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc('verify_and_link_parent');
       
       if (error) throw error;
       return !!data;
