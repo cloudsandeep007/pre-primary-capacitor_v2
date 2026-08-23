@@ -1,0 +1,7 @@
+# Build
+
+`npm run build`.
+
+
+Last Updated: 2026-08-23
+Source of Truth: Codebase
