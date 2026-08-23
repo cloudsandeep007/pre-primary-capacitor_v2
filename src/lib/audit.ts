@@ -21,7 +21,11 @@ export type AuditAction =
   | 'CLASS_CREATED'
   | 'CLASS_DELETED'
   | 'SYSTEM_UPDATED'
-  | 'SETTINGS_CHANGED';
+  | 'SETTINGS_CHANGED'
+  | 'GOOGLE_LOGIN_SUCCESS'
+  | 'GOOGLE_ACCOUNT_NOT_LINKED'
+  | 'PARENT_FEEDBACK_SUBMITTED'
+  | 'GOOGLE_REVIEW_LINK_OPENED';
 
 export type AuditResourceType =
   | 'student'
@@ -32,7 +36,9 @@ export type AuditResourceType =
   | 'announcement'
   | 'system'
   | 'classes'
-  | 'school_settings';
+  | 'school_settings'
+  | 'parent'
+  | 'feedback';
 
 export interface AuditEntry {
   actor_type: AuditActorType;

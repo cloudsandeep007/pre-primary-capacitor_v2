@@ -15,6 +15,33 @@ export interface Staff {
   is_active?: boolean;
 }
 
+export interface Parent {
+  id: string;
+  auth_user_id?: string;
+  email: string;
+  name: string;
+  phone?: string;
+  created_at: string;
+}
+
+export interface StudentParent {
+  student_id: string;
+  parent_id: string;
+  relationship_type: 'Father' | 'Mother' | 'Guardian';
+  is_primary: boolean;
+  student?: Student;
+}
+
+export interface SchoolFeedback {
+  id: string;
+  parent_id?: string;
+  student_id?: string;
+  rating_overall: number;
+  comments?: string;
+  is_public_review_clicked: boolean;
+  created_at: string;
+}
+
 export interface Announcement {
   id: string;
   class_name: string;

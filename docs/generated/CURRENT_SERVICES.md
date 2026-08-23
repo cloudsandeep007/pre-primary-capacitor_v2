@@ -7,12 +7,14 @@
 - classworkService.ts
 - diagnosticsService.ts
 - eventService.ts
+- feedbackService.ts
 - feeService.ts
 - gatePassService.ts
 - gradeService.ts
 - homeworkService.ts
 - notificationService.ts
 - operationsService.ts
+- parentService.ts
 - rbacService.ts
 - settingsService.ts
 - staffService.ts

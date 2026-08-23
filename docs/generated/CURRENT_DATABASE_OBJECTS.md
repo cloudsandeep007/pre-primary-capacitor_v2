@@ -36,4 +36,5 @@
 - 20260821000028_fix_assign_role_rpc.sql
 - 20260822000029_fix_audit_logs_rls.sql
 - 20260822000030_fee_phase_1.sql
+- 20260824000000_parent_architecture_and_feedback.sql
 - _full_database_setup.sql_backup

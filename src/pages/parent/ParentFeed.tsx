@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, ChevronLeft, ChevronRight, CheckCircle2, ShieldCheck, UserCheck, Megaphone, BookOpen, Calendar, StickyNote, DollarSign } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronRight, CheckCircle2, ShieldCheck, UserCheck, Megaphone, BookOpen, Calendar, StickyNote, DollarSign, Star } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import { Student, Staff, DailyLog, MediaItem, GatePass } from '@/lib/types';
@@ -16,6 +16,7 @@ import { CalendarTab } from './CalendarTab';
 import { ParentClassworkTab } from './ParentClassworkTab';
 import { PerformanceTab } from './PerformanceTab';
 import { ParentFeesTab } from './ParentFeesTab';
+import { ParentFeedbackTab } from './ParentFeedbackTab';
 import { ImageViewerModal } from '@/components/ImageViewerModal';
 import { logger } from '@/lib/logger';
 
@@ -32,8 +33,8 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
   const [selectedDate, setSelectedDate] = useState(() => new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0]);
   const [showGatePass, setShowGatePass] = useState(false);
   const [todayGatePass, setTodayGatePass] = useState<GatePass | null>(null);
-  // Main tab: diary | messages | homework | calendar | classwork | performance | fees
-  const [parentTab, setParentTab] = useState<'diary' | 'messages' | 'homework' | 'calendar' | 'classwork' | 'performance' | 'fees'>('diary');
+  // Main tab: diary | messages | homework | calendar | classwork | performance | fees | feedback
+  const [parentTab, setParentTab] = useState<'diary' | 'messages' | 'homework' | 'calendar' | 'classwork' | 'performance' | 'fees' | 'feedback'>('diary');
 
   const handleTabSwitch = (tab: typeof parentTab, requiredPerm?: string) => {
     if (requiredPerm && !can(requiredPerm)) {
@@ -317,16 +318,31 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
             onClick={() => handleTabSwitch('fees')}
             className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
               parentTab === 'fees'
-                ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-md'
-                : 'bg-white text-gray-600 border border-gray-200 hover:border-emerald-300'
+                ? 'bg-teal-600 text-white shadow-md shadow-teal-500/30'
+                : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
             }`}
           >
-            <DollarSign size={12} /> Fees
+            <DollarSign size={16} />
+            Fees
+          </button>
+          <button
+            onClick={() => handleTabSwitch('feedback', 'parent.feedback.create')}
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all ${
+              parentTab === 'feedback'
+                ? 'bg-teal-600 text-white shadow-md shadow-teal-500/30'
+                : 'bg-white text-gray-500 hover:bg-gray-50 border border-gray-100'
+            }`}
+          >
+            <Star size={16} />
+            Feedback
           </button>
         </div>
 
         {/* Fees Tab */}
         {parentTab === 'fees' && <ParentFeesTab student={student} />}
+
+        {/* Feedback Tab */}
+        {parentTab === 'feedback' && <ParentFeedbackTab student={student} />}
 
         {/* Messages Tab */}
         {parentTab === 'messages' && <MessagesTab student={student} />}
