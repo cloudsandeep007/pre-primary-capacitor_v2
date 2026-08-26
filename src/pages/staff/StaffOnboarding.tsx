@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ArrowLeft, User, Mail, Lock, BookOpen, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, User, Mail, Lock, BookOpen, CheckCircle, Hash } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import { ClassLevel, Staff } from '@/lib/types';
@@ -11,6 +11,7 @@ import { showToast } from '@/components/Toast';
 import { PhotoUploadInput } from '@/components/PhotoUploadInput';
 import { addMockStaff } from '@/lib/mockData';
 import { logger, generateTraceId } from '@/lib/logger';
+import { rbacService, Role } from '@/services/rbacService';
 
 interface StaffOnboardingProps {
   onSuccessLogin?: (staff: Staff) => void;
@@ -19,13 +20,24 @@ interface StaffOnboardingProps {
 export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
   const { navigate } = useRouter();
 
+  const [employeeId, setEmployeeId] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [assignedClass, setAssignedClass] = useState<ClassLevel | 'All'>('Nursery');
   const [photoUrl, setPhotoUrl] = useState('');
-  const [role, setRole] = useState<'staff' | 'admin'>('staff');
+  const [role, setRole] = useState('');
+  const [roles, setRoles] = useState<Role[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    rbacService.fetchRoles().then(fetchedRoles => {
+      setRoles(fetchedRoles);
+      if (fetchedRoles.length > 0) {
+        setRole(fetchedRoles[0].id);
+      }
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,12 +71,12 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
       const passwordHash = btoa(password.trim());
 
       const primaryStaffPayload = {
+        employee_id: employeeId.trim() || null,
         name: name.trim(),
         email: cleanEmail,
         password_hash: passwordHash,
         assigned_class: assignedClass,
         photo_url: photoUrl.trim() || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=80',
-        role: role,
       };
 
       let inserted: any = null;
@@ -82,13 +94,13 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
       if (insertErr) {
         logger.warn('_STAFFONBOARDING_PRIMARY_INSERT_FAILED_RETRYING_WITH_PASSWORD_COLUMN', { error: insertErr.message instanceof Error ? insertErr.message.message : String(insertErr.message), traceId });
         const fallbackStaffPayload = {
+          employee_id: employeeId.trim() || null,
           name: name.trim(),
           email: cleanEmail,
           password: password.trim(),
           password_hash: passwordHash,
           assigned_class: assignedClass,
           photo_url: photoUrl.trim() || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=80',
-          role: role,
         };
         const res2 = await supabase
           .from('staff')
@@ -98,6 +110,10 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
 
         inserted = res2.data;
         insertErr = res2.error;
+      }
+
+      if (inserted && role) {
+        await rbacService.assignUserRole(inserted.id, role);
       }
 
       let createdStaffObj: Staff;
@@ -110,7 +126,7 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
           name: inserted.name,
           assigned_class: inserted.assigned_class,
           photo_url: inserted.photo_url,
-          role: inserted.role || 'staff',
+          role: 'staff',
         };
         addMockStaff(createdStaffObj);
       } else {
@@ -124,7 +140,7 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
           password: password.trim(),
           assigned_class: assignedClass,
           photo_url: photoUrl.trim() || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=80',
-          role: role,
+          role: role as any,
         });
       }
 
@@ -178,6 +194,23 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
             onChange={setPhotoUrl}
             aspectShape="circle"
           />
+
+          {/* Employee ID */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Employee ID <span className="text-gray-400 font-normal">(Optional)</span>
+            </label>
+            <div className="relative">
+              <Hash size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                placeholder="e.g. EMP-1042"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none text-sm font-medium"
+              />
+            </div>
+          </div>
 
           {/* Full Name */}
           <div>
@@ -259,30 +292,17 @@ export function StaffOnboarding({ onSuccessLogin }: StaffOnboardingProps) {
           {/* Role Choice (Staff vs Admin) */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
             <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-2">
-              Account Permission Level
+              System Role <span className="text-rose-500">*</span>
             </label>
-            <div className="flex gap-4 text-xs font-semibold">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="role"
-                  checked={role === 'staff'}
-                  onChange={() => setRole('staff')}
-                  className="accent-sky-500"
-                />
-                Teacher / Class Staff
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="role"
-                  checked={role === 'admin'}
-                  onChange={() => setRole('admin')}
-                  className="accent-sky-500"
-                />
-                School Admin / Principal
-              </label>
-            </div>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none text-sm font-medium bg-white"
+            >
+              {roles.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
           </div>
 
           <Button type="submit" size="lg" disabled={submitting} className="w-full py-3.5 text-base font-bold">

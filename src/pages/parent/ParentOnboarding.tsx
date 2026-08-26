@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, User, Phone, KeyRound, Hash, Heart, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, User, Phone, KeyRound, Hash, Heart, ShieldCheck, Activity, Mail } from 'lucide-react';
 import { useRouter } from '@/lib/router';
 import { supabase } from '@/lib/supabase';
 import { studentService } from '@/services/studentService';
@@ -24,7 +24,10 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
   const [className, setClassName] = useState<ClassLevel>('Nursery');
   const [guardianName, setGuardianName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
   const [pin, setPin] = useState('1234');
+  const [emergencyContact, setEmergencyContact] = useState('');
+  const [bloodGroup, setBloodGroup] = useState('');
 
   const [studentPhotoUrl, setStudentPhotoUrl] = useState('');
   const [parentPhotoUrl, setParentPhotoUrl] = useState('');
@@ -68,9 +71,12 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
         parent_phone: parentPhone.trim(),
         student_photo_url: studentPhotoUrl.trim(),
         parent_photo_url: parentPhotoUrl.trim(),
+        emergency_contact_number: emergencyContact.trim(),
+        blood_group: bloodGroup.trim(),
+        parent_email: parentEmail.trim(),
       };
 
-      let createdStudentObj = await studentService.createStudent(primaryPayload, traceId);
+      let createdStudentObj = await studentService.createStudent(primaryPayload as any, traceId);
 
       if (createdStudentObj) {
         // Keep mock storage synchronized
@@ -216,6 +222,40 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
                 </select>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Blood Group
+                </label>
+                <div className="relative">
+                  <Activity size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <select
+                    value={bloodGroup}
+                    onChange={(e) => setBloodGroup(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none text-sm font-medium bg-white"
+                  >
+                    <option value="">Select (Optional)</option>
+                    {['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Emergency Contact Number
+                </label>
+                <div className="relative">
+                  <Phone size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="tel"
+                    value={emergencyContact}
+                    onChange={(e) => setEmergencyContact(e.target.value)}
+                    placeholder="+91 98765 00000"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Parent Details Section */}
@@ -255,6 +295,23 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
 
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Email Address <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="email"
+                    value={parentEmail}
+                    onChange={(e) => setParentEmail(e.target.value)}
+                    placeholder="parent@example.com"
+                    required
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   4-Digit Parent Portal PIN <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
@@ -269,6 +326,21 @@ export function ParentOnboarding({ onSuccessLogin }: ParentOnboardingProps) {
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none text-sm font-mono font-bold tracking-widest"
                   />
                 </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5 mt-4">
+                System Role <span className="text-gray-400 font-normal">(Read-only)</span>
+              </label>
+              <div className="relative">
+                <ShieldCheck size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value="Parent"
+                  disabled
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 outline-none text-sm font-medium cursor-not-allowed"
+                />
               </div>
             </div>
           </div>

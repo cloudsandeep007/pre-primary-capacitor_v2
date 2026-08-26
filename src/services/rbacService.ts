@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { logger } from '@/lib/logger';
+import { auditLog } from '@/lib/audit';
 
 export interface Role {
   id: string;
@@ -121,18 +122,26 @@ export const rbacService = {
   },
 
   async updateUserStatus(staffId: string, isActive: boolean): Promise<boolean> {
+    // Find the user by ID or auth_user_id to prevent UUID mismatch
     const { error } = await supabase
       .from('staff')
       .update({ is_active: isActive })
-      .eq('id', staffId);
+      .or(`auth_user_id.eq.${staffId},id.eq.${staffId}`);
 
     if (error) {
       logger.error('RBAC_UPDATE_USER_STATUS', { staffId, error: error.message });
       return false;
     }
+    
+    auditLog({
+      actor_type: 'admin',
+      action: isActive ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+      resource_type: 'staff',
+      resource_id: staffId,
+      metadata: { is_active: isActive }
+    });
     return true;
   },
-
 
   async assignUserRole(userId: string, roleId: string | null): Promise<boolean> {
     try {
@@ -141,6 +150,14 @@ export const rbacService = {
         target_role_id: roleId
       });
       if (error) throw error;
+      
+      auditLog({
+        actor_type: 'admin',
+        action: 'ROLE_ASSIGNED',
+        resource_type: 'staff',
+        resource_id: userId,
+        metadata: { roleId }
+      });
       return true;
     } catch (err: any) {
       logger.error('RBAC_ASSIGN_ROLE', { error: err.message });

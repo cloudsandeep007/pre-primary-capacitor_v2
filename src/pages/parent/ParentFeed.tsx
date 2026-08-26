@@ -111,6 +111,16 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
 
   const loadLogs = async (date: string) => {
     setLoading(true);
+    
+    const isStudentLogMatch = (l: DailyLog) => {
+      if (!l.student_id) return false;
+      if (l.student_id === student.id) return true;
+      if (l.student_id === student.roll_no) return true;
+      const demoMatch = getMockStudents().find((s) => s.id === l.student_id || s.roll_no === l.student_id);
+      if (demoMatch && (demoMatch.roll_no === student.roll_no || demoMatch.id === student.id)) return true;
+      return false;
+    };
+
     try {
       let remoteLogs: DailyLog[] = [];
       try {
@@ -137,15 +147,6 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
         logger.warn('_PARENTFEED_SUPABASE_FETCH_FAILED_FALLING_BACK_TO_LOCAL_LOGS');
       }
 
-      const isStudentLogMatch = (l: DailyLog) => {
-        if (!l.student_id) return false;
-        if (l.student_id === student.id) return true;
-        if (l.student_id === student.roll_no) return true;
-        const demoMatch = getMockStudents().find((s) => s.id === l.student_id || s.roll_no === l.student_id);
-        if (demoMatch && (demoMatch.roll_no === student.roll_no || demoMatch.id === student.id)) return true;
-        return false;
-      };
-
       const mockLogs = getMockLogs().filter(
         (l) => isStudentLogMatch(l) && l.log_date === date
       );
@@ -165,7 +166,7 @@ export function ParentFeed({ student, onLogout }: ParentFeedProps) {
       setLogs(Array.from(combinedMap.values()));
     } catch (err) {
       const mockLogs = getMockLogs().filter(
-        (l) => l.student_id === student.id || l.student_id === student.roll_no
+        (l) => isStudentLogMatch(l) && l.log_date === date
       );
       setLogs(mockLogs);
     } finally {

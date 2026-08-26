@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Users, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { feeService, FeeCategory, FeeStructure } from '@/services/feeService';
 import { showToast } from '@/components/Toast';
+import { supabase } from '@/lib/supabase';
 
 interface Props {
   activeYear: string;
@@ -28,6 +29,35 @@ export function FeeConfigurationTab({ activeYear }: Props) {
   // Assign form
   const [assignTarget, setAssignTarget] = useState<FeeStructure | null>(null);
   const [isAssigning, setIsAssigning] = useState(false);
+  // Preview counts shown in the assign modal before confirming
+  const [assignPreview, setAssignPreview] = useState<{ total: number; newCount: number; skipCount: number } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
+  const loadAssignPreview = async (structure: FeeStructure) => {
+    setIsLoadingPreview(true);
+    setAssignPreview(null);
+    try {
+      // Total students in class
+      const { count: total } = await supabase
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .or(`class_name.eq.${structure.class_name},class.eq.${structure.class_name}`);
+
+      // Already assigned
+      const { count: skip } = await supabase
+        .from('student_fees')
+        .select('id', { count: 'exact', head: true })
+        .eq('fee_structure_id', structure.id);
+
+      const t = total ?? 0;
+      const s = skip ?? 0;
+      setAssignPreview({ total: t, newCount: Math.max(0, t - s), skipCount: s });
+    } catch {
+      setAssignPreview(null); // Preview unavailable — modal still works
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -182,7 +212,7 @@ export function FeeConfigurationTab({ activeYear }: Props) {
                     <td className="p-4 text-sm text-slate-400">{st.frequency}</td>
                     <td className="p-4 text-right">
                       <button 
-                        onClick={() => setAssignTarget(st)}
+                        onClick={() => { setAssignTarget(st); loadAssignPreview(st); }}
                         className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-lg transition-colors border border-indigo-500/20"
                         title="Bulk Assign to Class"
                       >
@@ -366,9 +396,38 @@ export function FeeConfigurationTab({ activeYear }: Props) {
               </div>
             </div>
             
-            <p className="text-sm text-slate-400 mb-6">
-              This action will assign this fee structure to every active student currently enrolled in <strong>{assignTarget.class_name}</strong>. Students who already have this exact fee assigned will be skipped automatically to prevent duplicates.
-            </p>
+
+            {/* Live preview */}
+            <div className="mb-6">
+              {isLoadingPreview ? (
+                <div className="flex items-center gap-2 text-slate-400 text-sm py-3">
+                  <Loader2 size={16} className="animate-spin" /> Fetching student count...
+                </div>
+              ) : assignPreview ? (
+                <div className={`rounded-xl p-4 border ${assignPreview.newCount === 0 ? 'bg-amber-950/30 border-amber-500/30' : 'bg-emerald-950/30 border-emerald-500/30'}`}>
+                  {assignPreview.newCount > 0 ? (
+                    <div className="flex items-start gap-2 text-emerald-400 text-sm">
+                      <CheckCircle size={16} className="mt-0.5 shrink-0" />
+                      <span>
+                        Will create ledgers for <strong className="text-white">{assignPreview.newCount} students</strong> in {assignTarget.class_name}.
+                        {assignPreview.skipCount > 0 && (
+                          <span className="text-slate-400"> ({assignPreview.skipCount} already assigned → skipped)</span>
+                        )}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2 text-amber-400 text-sm">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                      <span>All {assignPreview.total} students in {assignTarget.class_name} already have this fee assigned.</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  This will assign the fee to all active students in <strong>{assignTarget.class_name}</strong>. Already-assigned students will be skipped.
+                </p>
+              )}
+            </div>
 
             <div className="flex gap-3">
               <button 

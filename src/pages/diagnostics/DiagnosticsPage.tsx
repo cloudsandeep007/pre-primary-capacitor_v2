@@ -13,14 +13,17 @@ import {
   AuditLog,
 } from '@/services/diagnosticsService';
 import { APP_VERSION, ENVIRONMENT, SUPABASE_PROJECT_ID } from '@/lib/env';
+import { supabase } from '@/lib/supabase';
 import { useRouter } from '@/lib/router';
 import { usePermissions } from '@/contexts/PermissionContext';
 import { RBACManager } from '../superadmin/RBACManager';
-import { supabase } from '@/lib/supabase';
+import { StaffOnboarding } from '../staff/StaffOnboarding';
+import { ParentOnboarding } from '../parent/ParentOnboarding';
+import { BulkOnboardTab } from './BulkOnboardTab';
 
-export type DiagTab = 'overview' | 'errors' | 'audit' | 'rbac';
+export type DiagTab = 'overview' | 'errors' | 'audit' | 'rbac' | 'onboard-child' | 'onboard-staff' | 'bulk-onboard';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function formatTs(ts: string): string {
   return new Date(ts).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -50,7 +53,7 @@ function actionColor(action: string) {
   return 'text-slate-400 bg-slate-500/10 border-slate-500/30';
 }
 
-// ─── Health Badge ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Health Badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function HealthBadge({ result }: { result: HealthCheckResult }) {
   if (result.status === 'checking') return (
     <span className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold">
@@ -61,18 +64,18 @@ function HealthBadge({ result }: { result: HealthCheckResult }) {
     <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
       <CheckCircle2 size={14} />
       OK {result.latencyMs !== undefined && <span className="font-normal text-slate-500">({result.latencyMs}ms)</span>}
-      {result.message && <span className="font-normal text-slate-500 ml-1">— {result.message}</span>}
+      {result.message && <span className="font-normal text-slate-500 ml-1">â€” {result.message}</span>}
     </span>
   );
   return (
     <span className="flex items-center gap-1.5 text-rose-400 text-xs font-bold">
       <XCircle size={14} />
-      Error {result.message && <span className="font-normal ml-1">— {result.message}</span>}
+      Error {result.message && <span className="font-normal ml-1">â€” {result.message}</span>}
     </span>
   );
 }
 
-// ─── Error Detail Drawer ──────────────────────────────────────────────────────
+// â”€â”€â”€ Error Detail Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ErrorDetailDrawer({ error, onClose, onResolved }: {
   error: ApplicationError; onClose: () => void; onResolved: (id: string, note: string) => void;
 }) {
@@ -108,13 +111,13 @@ function ErrorDetailDrawer({ error, onClose, onResolved }: {
           <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
             {[
               ['Timestamp',   formatTs(error.created_at)],
-              ['Error Code',  error.error_code  || '—'],
-              ['Screen',      error.screen       || '—'],
-              ['Operation',   error.operation    || '—'],
-              ['Resource',    error.resource     || '—'],
-              ['App Version', error.app_version  || '—'],
-              ['Environment', error.environment  || '—'],
-              ['User Type',   error.user_type    || '—'],
+              ['Error Code',  error.error_code  || 'â€”'],
+              ['Screen',      error.screen       || 'â€”'],
+              ['Operation',   error.operation    || 'â€”'],
+              ['Resource',    error.resource     || 'â€”'],
+              ['App Version', error.app_version  || 'â€”'],
+              ['Environment', error.environment  || 'â€”'],
+              ['User Type',   error.user_type    || 'â€”'],
             ].map(([label, value]) => (
               <div key={label} className="flex items-start gap-3 px-4 py-2.5">
                 <span className="text-xs font-semibold text-slate-400 w-28 flex-shrink-0 pt-0.5">{label}</span>
@@ -170,7 +173,7 @@ function ErrorDetailDrawer({ error, onClose, onResolved }: {
   );
 }
 
-// ─── Audit Detail Drawer ──────────────────────────────────────────────────────
+// â”€â”€â”€ Audit Detail Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AuditDetailDrawer({ log, onClose }: { log: AuditLog; onClose: () => void }) {
   const safeMetadata = log.metadata ? JSON.stringify(log.metadata, null, 2) : null;
   return (
@@ -191,11 +194,11 @@ function AuditDetailDrawer({ log, onClose }: { log: AuditLog; onClose: () => voi
           <div className="bg-slate-50 rounded-xl border border-slate-200 divide-y divide-slate-100">
             {[
               ['Timestamp',     formatTs(log.created_at)],
-              ['Actor Name',    log.actor_name    || '—'],
-              ['Actor ID',      log.actor_id      || '—'],
+              ['Actor Name',    log.actor_name    || 'â€”'],
+              ['Actor ID',      log.actor_id      || 'â€”'],
               ['Actor Type',    log.actor_type],
               ['Resource Type', log.resource_type],
-              ['Resource ID',   log.resource_id   || '—'],
+              ['Resource ID',   log.resource_id   || 'â€”'],
             ].map(([label, value]) => (
               <div key={label} className="flex items-start gap-3 px-4 py-2.5">
                 <span className="text-xs font-semibold text-slate-400 w-28 flex-shrink-0 pt-0.5">{label}</span>
@@ -215,7 +218,7 @@ function AuditDetailDrawer({ log, onClose }: { log: AuditLog; onClose: () => voi
   );
 }
 
-// ─── Error Row ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Error Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ErrorRow({ error, onView, onQuickResolve }: { error: ApplicationError; onView: () => void; onQuickResolve: () => void }) {
   return (
     <div className={`bg-slate-800/40 border border-slate-700/50 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-opacity ${error.resolved ? 'opacity-50' : ''}`}>
@@ -226,7 +229,7 @@ function ErrorRow({ error, onView, onQuickResolve }: { error: ApplicationError; 
             <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${levelColor(error.level)}`}>{error.level}</span>
             <span className="font-mono font-bold text-slate-200 text-xs break-all">{error.event_name}</span>
             {error.resolved
-              ? <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/30">✓ Resolved</span>
+              ? <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/30">âœ“ Resolved</span>
               : <span className="text-xs bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded-full font-semibold border border-rose-500/30">Unresolved</span>}
           </div>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
@@ -250,7 +253,7 @@ function ErrorRow({ error, onView, onQuickResolve }: { error: ApplicationError; 
   );
 }
 
-// ─── Audit Row ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Audit Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AuditRow({ log, onView }: { log: AuditLog; onView: () => void }) {
   return (
     <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -275,9 +278,9 @@ function AuditRow({ log, onView }: { log: AuditLog; onView: () => void }) {
   );
 }
 
-// ─── Main Page Component ──────────────────────────────────────────────────────
+// â”€â”€â”€ Main Page Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function DiagnosticsPage() {
   const { navigate } = useRouter();
 
@@ -432,7 +435,7 @@ export function DiagnosticsPage() {
               <div className="relative">
                 <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="password" value={loginPassword}
-                  onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••"
+                  onChange={e => setLoginPassword(e.target.value)} placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                   required
                   className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm outline-none focus:border-violet-500 font-mono" />
               </div>
@@ -452,12 +455,15 @@ export function DiagnosticsPage() {
 
   const unresolvedCount = errors.filter(e => !e.resolved && e.level === 'ERROR').length;
 
-  // ── Authenticated Page ──────────────────────────────────────────────────────
+  // â”€â”€ Authenticated Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const tabs: { id: DiagTab; label: string; icon: React.ReactNode }[] = [
     { id: 'overview', label: 'Overview',   icon: <Code2 size={13} /> },
     { id: 'errors',   label: `System Logs${unresolvedCount > 0 ? ` (${unresolvedCount})` : ''}`, icon: <ShieldAlert size={13} /> },
     { id: 'audit',    label: `Audit Log${auditLogs.length > 0 ? ` (${auditLogs.length})` : ''}`, icon: <ClipboardList size={13} /> },
     { id: 'rbac',     label: 'Access Control', icon: <User size={13} /> },
+    { id: 'onboard-child', label: 'Onboard Child', icon: <User size={13} /> },
+    { id: 'onboard-staff', label: 'Onboard Staff', icon: <User size={13} /> },
+    { id: 'bulk-onboard', label: 'Bulk Upload CSV', icon: <User size={13} /> },
   ];
 
   return (
@@ -493,7 +499,7 @@ export function DiagnosticsPage() {
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-        {/* ── OVERVIEW TAB ──────────────────────────────────────────────────── */}
+        {/* â”€â”€ OVERVIEW TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'overview' && (
           <>
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
@@ -550,7 +556,7 @@ export function DiagnosticsPage() {
                   <span className="text-xs font-bold uppercase tracking-widest text-slate-400">System Logs</span>
                 </div>
                 <p className={`text-3xl font-extrabold ${unresolvedCount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{unresolvedCount}</p>
-                <p className="text-xs text-slate-500 mt-1">Unresolved in last 48h → <span className="text-slate-300 group-hover:text-white transition-colors">View all</span></p>
+                <p className="text-xs text-slate-500 mt-1">Unresolved in last 48h â†’ <span className="text-slate-300 group-hover:text-white transition-colors">View all</span></p>
               </button>
               <button onClick={() => setActiveTab('audit')}
                 className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-left hover:border-violet-500/50 transition-colors group">
@@ -559,13 +565,13 @@ export function DiagnosticsPage() {
                   <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Audit Events</span>
                 </div>
                 <p className="text-3xl font-extrabold text-violet-300">{auditLogs.length}</p>
-                <p className="text-xs text-slate-500 mt-1">Actions recorded in last 48h → <span className="text-slate-300 group-hover:text-white transition-colors">View all</span></p>
+                <p className="text-xs text-slate-500 mt-1">Actions recorded in last 48h â†’ <span className="text-slate-300 group-hover:text-white transition-colors">View all</span></p>
               </button>
             </div>
           </>
         )}
 
-        {/* ── ERRORS TAB ────────────────────────────────────────────────────── */}
+        {/* â”€â”€ ERRORS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'errors' && (
           <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -627,7 +633,7 @@ export function DiagnosticsPage() {
           </section>
         )}
 
-        {/* ── AUDIT LOG TAB ─────────────────────────────────────────────────── */}
+        {/* â”€â”€ AUDIT LOG TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'audit' && (
           <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -697,7 +703,7 @@ export function DiagnosticsPage() {
           </section>
         )}
 
-        {/* ── RBAC TAB ───────────────────────────────────────────────────────── */}
+        {/* â”€â”€ RBAC TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeTab === 'rbac' && (
           <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
             <div className="flex flex-col mb-6">
@@ -715,11 +721,33 @@ export function DiagnosticsPage() {
           </section>
         )}
 
-      </main>
+        {/* â”€â”€â”€ ONBOARD CHILD TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {activeTab === 'onboard-child' && (
+          <section className="bg-slate-50 text-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <ParentOnboarding />
+          </section>
+        )}
 
+        {/* â”€â”€â”€ ONBOARD STAFF TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {activeTab === 'onboard-staff' && (
+          <section className="bg-slate-50 text-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <StaffOnboarding />
+          </section>
+        )}
+
+        {/* â”€â”€â”€ BULK ONBOARD TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {activeTab === 'bulk-onboard' && (
+          <section className="bg-slate-900 text-slate-200 border border-slate-800 rounded-2xl overflow-hidden shadow-xl shadow-black/20">
+            <BulkOnboardTab />
+          </section>
+        )}
+      </main>
+      
       {/* Drawers */}
       {selectedError  && <ErrorDetailDrawer error={selectedError} onClose={() => setSelectedError(null)} onResolved={handleResolved} />}
       {selectedAudit  && <AuditDetailDrawer log={selectedAudit}   onClose={() => setSelectedAudit(null)} />}
     </div>
   );
 }
+
+

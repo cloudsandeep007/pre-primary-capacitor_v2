@@ -13,8 +13,6 @@ const StaffPortal = lazy(() => import('@/pages/staff/StaffPortal').then(m => ({ 
 const ParentPortal = lazy(() => import('@/pages/parent/ParentPortal').then(m => ({ default: m.ParentPortal })));
 const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const GatePortal = lazy(() => import('@/pages/gate/GatePortal').then(m => ({ default: m.GatePortal })));
-const StaffOnboarding = lazy(() => import('@/pages/staff/StaffOnboarding').then(m => ({ default: m.StaffOnboarding })));
-const ParentOnboarding = lazy(() => import('@/pages/parent/ParentOnboarding').then(m => ({ default: m.ParentOnboarding })));
 const DiagnosticsPage = lazy(() => import('@/pages/diagnostics/DiagnosticsPage').then(m => ({ default: m.DiagnosticsPage })));
 
 function AppContent() {
@@ -43,8 +41,6 @@ function AppContent() {
         <ErrorBoundary name="ParentPortal">{route === '/parent' && <ParentPortal />}</ErrorBoundary>
         <ErrorBoundary name="AdminDashboard">{route === '/admin' && <AdminDashboard />}</ErrorBoundary>
         <ErrorBoundary name="GatePortal">{route === '/gate' && <GatePortal />}</ErrorBoundary>
-        <ErrorBoundary name="StaffOnboarding">{route === '/onboarding/staff' && <StaffOnboarding />}</ErrorBoundary>
-        <ErrorBoundary name="ParentOnboarding">{route === '/onboarding/parent' && <ParentOnboarding />}</ErrorBoundary>
         <ErrorBoundary name="DiagnosticsPage">{route === '/system-core' && <DiagnosticsPage />}</ErrorBoundary>
       </Suspense>
     </>

@@ -145,27 +145,26 @@ export function ActivityFormModal({ student, staff, onClose, onSaved }: Activity
         log_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
       };
 
-      // Always save to local mock storage so ParentFeed reflects it instantly in all scenarios
-      addMockLog({
-        student_id: student.id,
-        staff_name: staff.name,
-        meal_status: meal || null,
-        nap_time: nap || null,
-        mood: mood || null,
-        teacher_notes: note.trim() || null,
-        photo_url: firstPhoto,
-        media_items: uploadedItems,
-        log_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
-      });
-
-      // Also sync to Supabase via the service
+      // Sync to Supabase via the service
       try {
         logger.info('ACTIVITY_DB_INSERT_STARTED', { studentId: student.id, traceId });
         await activityService.createLog(logEntry, traceId);
         logger.info('ACTIVITY_DB_INSERT_SUCCESS', { studentId: student.id, traceId });
       } catch (err) {
-        // Error already logged in service, but we can do a local info log if needed
         logger.error('ACTIVITY_DB_INSERT_FAILED', { error: err instanceof Error ? err.message : String(err), studentId: student.id, traceId });
+        
+        // Fallback to local mock storage ONLY if DB fails
+        addMockLog({
+          student_id: student.id,
+          staff_name: staff.name,
+          meal_status: meal || null,
+          nap_time: nap || null,
+          mood: mood || null,
+          teacher_notes: note.trim() || null,
+          photo_url: firstPhoto,
+          media_items: uploadedItems,
+          log_date: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
+        });
       }
 
       showToast('success', `Activity logged for ${student.name}!`);

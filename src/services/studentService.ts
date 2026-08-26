@@ -158,6 +158,9 @@ export const studentService = {
           parent_phone: studentPayload.parent_phone,
           student_photo_url: studentPayload.student_photo_url,
           parent_photo_url: studentPayload.parent_photo_url,
+          emergency_contact_number: (studentPayload as any).emergency_contact_number,
+          blood_group: (studentPayload as any).blood_group,
+          parent_email: (studentPayload as any).parent_email,
         };
 
         const { data: res2, error: err2 } = await supabase
@@ -219,3 +222,4 @@ export const studentService = {
     }
   }
 };
+

@@ -15,7 +15,9 @@ interface Props {
 
 export function AdminDashboardOverview({ students, staff, activityLogs, gatePasses, attendance, events }: Props) {
   const [ledgers, setLedgers] = useState<StudentFee[]>([]);
-  
+  const [financeTimeFilter, setFinanceTimeFilter] = useState<'month' | 'year'>('month');
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+
   useEffect(() => {
     // Fetch live fee data for the current active year
     feeService.fetchStudentFees('2026-2027').then(data => setLedgers(data)).catch(console.error);
@@ -25,8 +27,8 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
   const newAdmissionsMock = students.filter(s => {
     // Basic heuristic: assume high ID or missing pin means new if we don't have created_at
     return false; // we'll fallback to mock for now since 'created_at' isn't reliably on Student type
-  }).length || Math.floor(students.length * 0.15) || 12; 
-  
+  }).length || Math.floor(students.length * 0.15) || 12;
+
   const dropouts = students.filter(s => s.status === 'dropout').length;
 
   // --- Staff Metrics ---
@@ -34,10 +36,21 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
   const staffOnLeaveMock = 0; // Mocked
 
   // --- Finance Metrics (LIVE) ---
-  const feeExpected = ledgers.filter(l => l.status !== 'Waived').reduce((acc, curr) => acc + (curr.total_due || 0), 0);
-  const feePaidLive = ledgers.reduce((acc, curr) => acc + (curr.amount_paid || 0), 0);
-  const feePendingLive = ledgers.filter(l => l.status !== 'Waived').reduce((acc, curr) => acc + (curr.total_due - curr.amount_paid), 0);
-  
+  const currentYear = new Date().getFullYear();
+
+  const filteredLedgers = useMemo(() => {
+    if (financeTimeFilter === 'year') return ledgers;
+    return ledgers.filter(l => {
+      if (!l.due_date) return l.fee_period !== 'Monthly';
+      const d = new Date(l.due_date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    });
+  }, [ledgers, financeTimeFilter]);
+
+  const feeExpected = filteredLedgers.filter(l => l.status !== 'Waived').reduce((acc, curr) => acc + (curr.total_due || 0), 0);
+  const feePaidLive = filteredLedgers.reduce((acc, curr) => acc + (curr.amount_paid || 0), 0);
+  const feePendingLive = filteredLedgers.filter(l => l.status !== 'Waived').reduce((acc, curr) => acc + ((curr.total_due || 0) - (curr.amount_paid || 0)), 0);
+
   const feeTotalMock = feeExpected > 0 ? feeExpected : 1; // Prevent div/0
   const feePaidPercent = Math.round((feePaidLive / feeTotalMock) * 100);
   const feePendingPercent = Math.round((feePendingLive / feeTotalMock) * 100);
@@ -97,9 +110,20 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
   ];
 
   const feePieData = [
-    { name: 'Collected', value: feePaidLive, color: '#10b981' },
-    { name: 'Pending', value: feePendingLive, color: '#f43f5e' }
+    { name: 'Collected', value: feePaidLive || 0, color: '#10b981' },
+    { name: 'Pending', value: feePendingLive || 0, color: '#f43f5e' }
   ];
+
+  // Class-wise fee calculation
+  const classFeeMap: Record<string, { cls: string; paid: number; pending: number }> = {};
+  filteredLedgers.forEach(l => {
+    if (l.status === 'Waived') return;
+    const cls = l.student?.class_name || 'Unknown';
+    if (!classFeeMap[cls]) classFeeMap[cls] = { cls, paid: 0, pending: 0 };
+    classFeeMap[cls].paid += (l.amount_paid || 0);
+    classFeeMap[cls].pending += ((l.total_due || 0) - (l.amount_paid || 0));
+  });
+  const classWiseFeeData = Object.values(classFeeMap).sort((a, b) => a.cls.localeCompare(b.cls));
 
   // --- Helpers for Events ---
   const getEventColor = (type: string) => {
@@ -130,15 +154,15 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
           <div className="text-sm text-slate-500 font-medium mt-1">Key metrics and system activity</div>
         </div>
         <div className="flex flex-wrap items-center gap-2 mt-4 md:mt-0">
-           <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
-             <GraduationCap size={16} /> Add Student
-           </button>
-           <button className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
-             <Calendar size={16} /> Schedule Exam
-           </button>
-           <button className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
-             <Megaphone size={16} /> Send Notice
-           </button>
+          <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
+            <GraduationCap size={16} /> Add Student
+          </button>
+          <button className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
+            <Calendar size={16} /> Schedule Exam
+          </button>
+          <button className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-sm transition-colors flex items-center gap-2">
+            <Megaphone size={16} /> Send Notice
+          </button>
         </div>
       </div>
 
@@ -153,7 +177,7 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
           <div>
             <p className="text-3xl font-extrabold text-slate-800">{students.length}</p>
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
-              <span className="text-xs font-semibold text-emerald-600">+{newAdmissionsMock} New</span>
+              <span className="text-xs font-semibold text-emerald-600">₹{newAdmissionsMock} New</span>
               <span className="text-xs font-semibold text-rose-500">{dropouts} Dropouts</span>
             </div>
           </div>
@@ -176,15 +200,25 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
 
         {/* Fee Collection Status Widget */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-amber-200 transition-colors">
-          <div className="flex items-center gap-2 mb-3 text-slate-500">
-            <DollarSign size={16} className="text-emerald-500" />
-            <h3 className="text-sm font-semibold text-slate-700">Fee Collection</h3>
+          <div className="flex items-center justify-between mb-3 text-slate-500">
+            <div className="flex items-center gap-2">
+              <DollarSign size={16} className="text-emerald-500" />
+              <h3 className="text-sm font-semibold text-slate-700">Fee Collection</h3>
+            </div>
+            <select
+              value={financeTimeFilter}
+              onChange={(e) => setFinanceTimeFilter(e.target.value as 'month' | 'year')}
+              className="text-xs bg-slate-100 rounded-lg px-2 py-1 text-slate-600 font-medium outline-none border-none cursor-pointer"
+            >
+              <option value="month">Monthly</option>
+              <option value="year">Annual</option>
+            </select>
           </div>
           <div>
             <p className="text-3xl font-extrabold text-slate-800">{feePaidPercent}%</p>
             <div className="w-full h-2 bg-rose-100 rounded-full mt-2 overflow-hidden flex">
-               <div className="h-full bg-emerald-500" style={{ width: `${feePaidPercent}%` }}></div>
-               <div className="h-full bg-rose-500" style={{ width: `${feePendingPercent}%` }}></div>
+              <div className="h-full bg-emerald-500" style={{ width: `${feePaidPercent}%` }}></div>
+              <div className="h-full bg-rose-500" style={{ width: `${feePendingPercent}%` }}></div>
             </div>
             <div className="flex items-center justify-between mt-3 pt-2">
               <span className="text-xs font-semibold text-emerald-600">Paid: ₹{feePaidLive.toLocaleString()}</span>
@@ -211,16 +245,16 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
 
       {/* Middle Row: Attendance & Fees */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
+
         {/* Attendance Heatmap / Bar Chart (LIVE) */}
         <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-base font-bold text-slate-700">Attendance by Class</h3>
             <button className="text-xs font-bold text-sky-600 hover:text-sky-700 flex items-center gap-1">
-              <FileText size={14}/> Download Report
+              <FileText size={14} /> Download Report
             </button>
           </div>
-          
+
           <div className="flex-1 px-2 pb-2 min-h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={displayHeatmap} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
@@ -243,7 +277,7 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-base font-bold text-slate-700">Fee Collection</h3>
           </div>
-          
+
           <div className="flex-1 min-h-[250px] relative flex items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -272,15 +306,99 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
         </div>
       </div>
 
+      {/* Finance Class-wise Insight Row */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-base font-bold text-slate-700">Class-wise Fee Collection ({financeTimeFilter === 'month' ? 'Current Month' : 'Full Year'})</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Click a bar to see individual student breakdown</p>
+          </div>
+        </div>
+        <div className="w-full min-h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={classWiseFeeData}
+              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              onClick={(data: any) => { if (data?.activePayload?.[0]) setSelectedClass((data.activePayload[0].payload as any).cls); }}
+              style={{ cursor: 'pointer' }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="cls" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+              <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+              <Bar dataKey="paid" stackId="a" fill="#10b981" name="Collected (₹)" radius={[0, 0, 4, 4]} maxBarSize={50} />
+              <Bar dataKey="pending" stackId="a" fill="#f43f5e" name="Pending (₹)" radius={[4, 4, 0, 0]} maxBarSize={50} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Class Drill-down Slide-in Panel */}
+      {selectedClass && (() => {
+        const classLedgers = filteredLedgers.filter(l => l.student?.class_name === selectedClass);
+        return (
+          <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setSelectedClass(null)}>
+            <div
+              className="bg-white w-full max-w-md shadow-2xl border-l border-slate-200 flex flex-col h-full overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">{selectedClass} — Fee Details</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">{classLedgers.length} ledger entries · {financeTimeFilter === 'month' ? 'Current Month' : 'Full Year'}</p>
+                </div>
+                <button onClick={() => setSelectedClass(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">✕</button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {classLedgers.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 text-sm">No fee records for this class in the selected period.</div>
+                ) : (
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider sticky top-0">
+                        <th className="p-3 font-semibold">Student</th>
+                        <th className="p-3 font-semibold text-right">Paid</th>
+                        <th className="p-3 font-semibold text-right">Pending</th>
+                        <th className="p-3 font-semibold text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {classLedgers.map(l => {
+                        const pending = (l.total_due || 0) - (l.amount_paid || 0);
+                        return (
+                          <tr key={l.id} className="hover:bg-slate-50">
+                            <td className="p-3">
+                              <p className="font-semibold text-slate-800">{l.student?.name}</p>
+                              <p className="text-[11px] text-slate-400">{l.category?.name || l.structure?.category?.name || l.structure?.fee_category}</p>
+                            </td>
+                            <td className="p-3 text-right font-bold text-emerald-600">₹{(l.amount_paid || 0).toLocaleString()}</td>
+                            <td className="p-3 text-right font-bold text-rose-500">₹{pending.toLocaleString()}</td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${l.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : l.status === 'Waived' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'}`}>
+                                {l.status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Bottom Row: Admissions Trend & Upcoming Events */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
+
         {/* Admissions Trend Line Chart */}
         <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-base font-bold text-slate-700">Admissions Trend (Last 6 Months)</h3>
           </div>
-          
+
           <div className="flex-1 px-2 pb-2 min-h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={admissionsTrend} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
@@ -303,7 +421,7 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
             </h3>
             <button className="text-xs font-bold text-slate-400 hover:text-slate-700">View All</button>
           </div>
-          
+
           <div className="space-y-4 flex-1 overflow-y-auto pr-2" style={{ maxHeight: '250px' }}>
             {events.length === 0 ? (
               <div className="text-sm text-slate-400 text-center mt-10">No upcoming events scheduled.</div>
@@ -314,8 +432,8 @@ export function AdminDashboardOverview({ students, staff, activityLogs, gatePass
                 return (
                   <div key={evt.id} className={`${colors.wrapper} border p-4 rounded-xl flex items-start gap-4 hover:opacity-90 transition-opacity cursor-pointer group`}>
                     <div className={`${colors.iconBg} w-12 h-12 rounded-lg flex flex-col items-center justify-center flex-shrink-0 border group-hover:text-white transition-colors`}>
-                        <span className="text-[10px] font-bold uppercase leading-none">{dateParts.month}</span>
-                        <span className="text-lg font-extrabold leading-tight">{dateParts.day}</span>
+                      <span className="text-[10px] font-bold uppercase leading-none">{dateParts.month}</span>
+                      <span className="text-lg font-extrabold leading-tight">{dateParts.day}</span>
                     </div>
                     <div>
                       <h4 className={`text-sm font-bold ${colors.text} mb-0.5`}>{evt.title}</h4>
