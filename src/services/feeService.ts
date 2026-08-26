@@ -58,6 +58,8 @@ export interface FeePayment {
   reversal_note?: string;
   reversed_at?: string;
   reversed_by?: string;
+  period_type?: string;
+  period_value?: string;
 }
 
 class FeeService {
@@ -247,7 +249,7 @@ class FeeService {
         actor_type: 'staff',
         action: 'SYSTEM_UPDATED' as any,
         resource_type: 'system',
-        metadata: { action: 'FEE_PAYMENT_RECORDED', receipt: payload.receipt_number, amount: payload.amount },
+        metadata: { action: 'FEE_PAYMENT_RECORDED', receipt: payload.receipt_number, amount: payload.amount, period: payload.period_value },
       });
 
       return { success: true, message: 'Payment recorded successfully', receipt: payload.receipt_number };

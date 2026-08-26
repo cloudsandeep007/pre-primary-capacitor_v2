@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DollarSign, Plus, FileText, CheckCircle, AlertCircle, Clock, Settings, CreditCard, Percent, XCircle, Download, RotateCcw, Bell } from 'lucide-react';
+import { DollarSign, Plus, FileText, CheckCircle, AlertCircle, Clock, Settings, CreditCard, Percent, XCircle, Download, RotateCcw, Bell, Search } from 'lucide-react';
 import { usePermissions } from '@/contexts/PermissionContext';
 import { showToast } from '@/components/Toast';
 import { feeService, FeeStructure, StudentFee, FeePayment } from '@/services/feeService';
 import { settingsService } from '@/services/settingsService';
+import { LedgerTable, StudentGroup } from './finance/components/LedgerTable';
+import { DefaultersTable } from './finance/components/DefaultersTable';
+import { HistoryModal } from './finance/components/HistoryModal';
+import { ReversalDialog } from './finance/components/ReversalDialog';
+import { RecordPaymentModal } from './finance/components/RecordPaymentModal';
 import { FeeConfigurationTab } from './finance/FeeConfigurationTab';
 import { downloadFile } from '@/lib/plugins/filesystem';
 import { generateFeeReceiptHtml, generateFeeInvoiceHtml, printReceipt } from '@/lib/receiptUtils';
@@ -16,6 +21,12 @@ export function AdminFinanceView() {
   const [ledgers, setLedgers] = useState<StudentFee[]>([]);
   const [activeYear, setActiveYear] = useState<string>('2026-2027');
   const [timeFilter, setTimeFilter] = useState<'month' | 'year'>('year');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [classFilter, setClassFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'dues' | 'paid'>('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortBy, setSortBy] = useState<'name' | 'highest_due' | 'lowest_due'>('highest_due');
+
   const [activeTab, setActiveTab] = useState<'overview' | 'defaulters' | 'config'>('overview');
 
   // Payment Modal State
@@ -24,6 +35,8 @@ export function AdminFinanceView() {
   const [payMode, setPayMode] = useState('Cash');
   const [payRef, setPayRef] = useState('');
   const [payRemarks, setPayRemarks] = useState('');
+  const [payPeriodType, setPayPeriodType] = useState('Unspecified');
+  const [payPeriodValue, setPayPeriodValue] = useState('');
   const [isPaying, setIsPaying] = useState(false);
 
   // History Modal State
@@ -109,19 +122,103 @@ export function AdminFinanceView() {
     setIsPaying(false);
   };
 
-  const filteredLedgers = useMemo((): StudentFee[] => {
-    if (timeFilter === 'year') return ledgers;
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    return ledgers.filter(l => {
-      if (!l.due_date) return l.fee_period !== 'Monthly';
-      const d = new Date(l.due_date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  
+  // Compute true global outstanding per student (ignoring time/category filters)
+  const globalOutstandingMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    ledgers.forEach(l => {
+      if (l.status !== 'Waived' && l.status !== 'Cancelled') {
+        const sid = l.student_id;
+        const pending = (Number(l.total_due) || 0) - (Number(l.amount_paid) || 0);
+        map[sid] = (map[sid] || 0) + pending;
+      }
     });
-  }, [ledgers, timeFilter]);
+    return map;
+  }, [ledgers]);
+
+  // 1. First apply time and category filters to raw ledgers
+  const baseFilteredLedgers = useMemo((): StudentFee[] => {
+    let result = ledgers;
+    
+    // Time Filter
+    if (timeFilter === 'month') {
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      result = result.filter(l => {
+        if (!l.due_date) return l.fee_period !== 'Monthly';
+        const d = new Date(l.due_date);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      });
+    }
+    
+    // Category Filter
+    if (categoryFilter !== 'all') {
+      result = result.filter(l => {
+        const catName = l.category?.name || l.structure?.category?.name || l.structure?.fee_category || 'General Fee';
+        return catName === categoryFilter;
+      });
+    }
+    
+    return result;
+  }, [ledgers, timeFilter, categoryFilter]);
+
+  // 2. Group the filtered ledgers by Student
+  const studentGroups = useMemo(() => {
+    const groups: Record<string, StudentGroup> = {};
+    baseFilteredLedgers.forEach(l => {
+      const sid = l.student_id;
+      if (!groups[sid]) {
+        groups[sid] = { 
+          studentId: sid,
+          studentName: l.student?.name || 'Unknown Student',
+          className: l.student?.class_name || 'Unknown Class',
+          ledgers: [], 
+          totalDue: 0, 
+          totalPaid: 0,
+          outstanding: 0,
+          globalOutstanding: globalOutstandingMap[sid] || 0
+        };
+      }
+      groups[sid].ledgers.push(l);
+      groups[sid].totalDue += Number(l.total_due) || 0;
+      groups[sid].totalPaid += Number(l.amount_paid) || 0;
+      groups[sid].outstanding = groups[sid].totalDue - groups[sid].totalPaid;
+    });
+    return Object.values(groups);
+  }, [baseFilteredLedgers, globalOutstandingMap]);
+
+  // Unique lists for dropdowns
+  const availableClasses = useMemo(() => Array.from(new Set(studentGroups.map(g => g.className))).sort(), [studentGroups]);
+  const availableCategories = useMemo(() => Array.from(new Set(ledgers.map(l => l.category?.name || l.structure?.category?.name || l.structure?.fee_category || 'General Fee'))).sort(), [ledgers]);
+
+  // 3. Final Filter & Sort of the Student Groups
+  const filteredGroups = useMemo(() => {
+    let result = studentGroups.filter(g => {
+      if (statusFilter === 'dues' && g.globalOutstanding <= 0) return false;
+      if (statusFilter === 'paid' && g.globalOutstanding > 0) return false;
+      if (classFilter !== 'all' && g.className !== classFilter) return false;
+      if (searchTerm && !g.studentName.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      return true;
+    });
+
+    result.sort((a, b) => {
+      if (sortBy === 'highest_due') return b.outstanding - a.outstanding;
+      if (sortBy === 'lowest_due') return a.outstanding - b.outstanding;
+      return a.studentName.localeCompare(b.studentName);
+    });
+
+    return result;
+  }, [studentGroups, statusFilter, classFilter, searchTerm, sortBy]);
+
+  // 4. Compute KPIs exactly from the filtered groups
+  const totalExpected = filteredGroups.reduce((acc, curr) => acc + curr.totalDue, 0);
+  const totalCollected = filteredGroups.reduce((acc, curr) => acc + curr.totalPaid, 0);
+  const totalPending = filteredGroups.reduce((acc, curr) => acc + curr.outstanding, 0);
+  // Discounts apply to all base ledgers currently on screen
+  const totalDiscounts = baseFilteredLedgers.reduce((acc, curr) => acc + (curr.discount_amount || 0), 0);
+  const totalWaivedCount = ledgers.filter(l => l.status === 'Waived').length;
 
   // Defaulters: overdue ledgers (past due_date, still unpaid/partially paid)
-  // MUST be above the loading guard — React Rules of Hooks
   const defaulters = useMemo((): StudentFee[] => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -129,21 +226,17 @@ export function AdminFinanceView() {
       if (l.status === 'Paid' || l.status === 'Waived' || l.status === 'Cancelled') return false;
       if (!l.due_date) return false;
       const due = new Date(l.due_date);
+      due.setHours(0, 0, 0, 0);
       return due < today;
     }).sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
   }, [ledgers]);
-
-  const totalExpected = filteredLedgers.filter(l => l.status !== 'Waived').reduce((acc, curr) => acc + (curr.total_due || 0), 0);
-  const totalCollected = filteredLedgers.reduce((acc, curr) => acc + (curr.amount_paid || 0), 0);
-  const totalPending = filteredLedgers.filter(l => l.status !== 'Waived').reduce((acc, curr) => acc + ((curr.total_due || 0) - (curr.amount_paid || 0)), 0);
-  const totalDiscounts = filteredLedgers.reduce((acc, curr) => acc + (curr.discount_amount || 0), 0);
-  const totalWaivedCount = ledgers.filter(l => l.status === 'Waived').length;
 
   if (loading) {
     return <div className="p-8 text-center text-slate-500">Loading financial records...</div>;
   }
 
-  const getAgingBucket = (dueDate: string): { label: string; color: string; bg: string } => {
+  const getAgingBucket = (dueDate?: string) => {
+    if (!dueDate) return { label: 'Unknown', color: 'text-slate-500', bg: 'bg-slate-100' };
     const daysOverdue = Math.floor((Date.now() - new Date(dueDate).getTime()) / (1000 * 60 * 60 * 24));
     if (daysOverdue > 60) return { label: `${daysOverdue}d overdue`, color: 'text-rose-700', bg: 'bg-rose-100' };
     if (daysOverdue > 30) return { label: `${daysOverdue}d overdue`, color: 'text-orange-700', bg: 'bg-orange-100' };
@@ -203,6 +296,9 @@ export function AdminFinanceView() {
     showToast('success', `Reminder logged for ${ledger.student?.name}`);
   };
 
+  
+
+
   const handleExportCSV = async () => {
     const headers = ['Student Name', 'Class', 'Fee Category', 'Original Fee', 'Discount', 'Adjusted Due', 'Amount Paid', 'Pending', 'Status'];
     const csvContent = ledgers.map(l => {
@@ -224,6 +320,20 @@ export function AdminFinanceView() {
     const csvData = [headers.join(','), ...csvContent].join('\n');
     await downloadFile(`fee_ledgers_${activeYear}.csv`, csvData, 'text/csv', false);
   };
+
+  const handleBulkRemind = () => {
+    const duesCount = filteredGroups.filter(g => g.outstanding > 0).length;
+    if (duesCount === 0) return showToast('error', 'No students with dues in the current view.');
+    
+    auditLog({
+      actor_type: 'staff',
+      action: 'SYSTEM_UPDATED' as any,
+      resource_type: 'system',
+      metadata: { action: 'BULK_REMINDER_SENT', count: duesCount }
+    });
+    showToast('success', `Reminders sent to ${duesCount} students successfully!`);
+  };
+
 
 
   return (
@@ -273,94 +383,22 @@ export function AdminFinanceView() {
       {activeTab === 'config' ? (
         <FeeConfigurationTab activeYear={activeYear} />
       ) : activeTab === 'defaulters' ? (
-        /* ── DEFAULTERS TAB ─────────────────────────────────────── */
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <AlertCircle size={20} className="text-rose-500" /> Overdue Fee Defaulters
-              </h2>
-              <p className="text-sm text-slate-500 mt-0.5">Students with fees that have passed their due date and remain unpaid.</p>
-            </div>
-            <span className="px-3 py-1 bg-rose-100 text-rose-700 text-sm font-bold rounded-full">{defaulters.length} student{defaulters.length !== 1 ? 's' : ''}</span>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-rose-800">Defaulters & Aging</h3>
           </div>
-
-          {defaulters.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle size={28} className="text-emerald-500" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-700">No defaulters!</h3>
-              <p className="text-slate-500 mt-1 text-sm">All fees with due dates have been paid or are not yet overdue.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                    <th className="p-4 font-semibold">Student</th>
-                    <th className="p-4 font-semibold">Fee Category</th>
-                    <th className="p-4 font-semibold">Due Date</th>
-                    <th className="p-4 font-semibold">Overdue</th>
-                    <th className="p-4 font-semibold text-right">Pending (₹)</th>
-                    <th className="p-4 font-semibold text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {defaulters.map(l => {
-                    const aging = getAgingBucket(l.due_date!);
-                    const pending = (l.total_due || 0) - (l.amount_paid || 0);
-                    const catName = l.category?.name || l.structure?.category?.name || l.structure?.fee_category || 'Ad-Hoc Fee';
-                    return (
-                      <tr key={l.id} className="hover:bg-rose-50/30 transition-colors">
-                        <td className="p-4">
-                          <p className="font-bold text-slate-800">{l.student?.name}</p>
-                          <p className="text-xs text-slate-500">{l.student?.class_name}</p>
-                        </td>
-                        <td className="p-4 text-sm font-medium text-slate-700">{catName}</td>
-                        <td className="p-4 text-sm text-slate-600">
-                          {new Date(l.due_date!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${aging.bg} ${aging.color}`}>
-                            {aging.label}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right font-extrabold text-rose-600 text-base">₹{pending.toLocaleString()}</td>
-                        <td className="p-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => handleOpenPayment(l)}
-                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                            >
-                              <CreditCard size={13} /> Collect
-                            </button>
-                            {remindedIds.has(l.id!) ? (
-                              <span className="px-3 py-1.5 bg-slate-100 text-slate-400 rounded-lg text-xs font-bold inline-flex items-center gap-1.5">
-                                <CheckCircle size={13} /> Reminded
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => handleMarkReminded(l)}
-                                className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                                title="Log a reminder for this student"
-                              >
-                                <Bell size={13} /> Remind
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DefaultersTable
+            defaulters={defaulters}
+            remindedIds={remindedIds}
+            onCollect={handleOpenPayment}
+            onRemind={handleMarkReminded}
+            getAgingBucket={getAgingBucket}
+          />
         </div>
       ) : (
-        /* ── LEDGER OVERVIEW TAB ─────────────────────────────────── */
-        <>
+        
+        <div className="space-y-6">
+          
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center gap-2 text-slate-500 mb-1.5">
@@ -399,377 +437,129 @@ export function AdminFinanceView() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-800">Student Fee Ledger</h2>
-              <button
+          {/* TOP CONTROLS */}
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+            <div className="flex items-center gap-3">
+              <h3 className="text-lg font-bold text-slate-800 hidden md:block">Fee Ledgers</h3>
+              <div className="flex bg-slate-100 rounded-xl p-1 border border-slate-200">
+                <button 
+                  onClick={() => setTimeFilter('month')}
+                  className={`px-4 py-1.5 text-sm font-bold rounded-lg transition-colors ${timeFilter === 'month' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  This Month
+                </button>
+                <button 
+                  onClick={() => setTimeFilter('year')}
+                  className={`px-4 py-1.5 text-sm font-bold rounded-lg transition-colors ${timeFilter === 'year' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Full Year
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+              <div className="relative w-full md:w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Search student..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <select 
+                value={categoryFilter} 
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Fee Types</option>
+                {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+
+              <select 
+                value={classFilter} 
+                onChange={(e) => setClassFilter(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 hidden lg:block"
+              >
+                <option value="all">All Classes</option>
+                {availableClasses.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+
+              <select 
+                value={statusFilter} 
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Status</option>
+                <option value="dues">Has Dues</option>
+                <option value="paid">Fully Paid</option>
+              </select>
+
+              <button 
                 onClick={handleExportCSV}
-                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-sm font-bold transition-colors inline-flex items-center gap-2"
+                className="px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors border border-indigo-100"
               >
-                <Download size={16} /> Export CSV
+                <Download size={16} /> Export
+              </button>
+
+              <button 
+                onClick={handleBulkRemind}
+                className="px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors border border-rose-100"
+              >
+                <Bell size={16} /> Remind Dues
               </button>
             </div>
-
-            {ledgers.length === 0 ? (
-              <div className="p-12 text-center flex flex-col items-center">
-                <Clock className="text-slate-300 mb-3" size={48} />
-                <h3 className="text-lg font-bold text-slate-700">No Ledgers Active</h3>
-                <p className="text-slate-500 max-w-md mt-1">There are no fee ledgers generated for {activeYear} yet.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                      <th className="p-4 font-semibold">Student</th>
-                      <th className="p-4 font-semibold">Fee Category</th>
-                      <th className="p-4 font-semibold">Total Due</th>
-                      <th className="p-4 font-semibold">Paid</th>
-                      <th className="p-4 font-semibold">Status</th>
-                      <th className="p-4 font-semibold text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {ledgers.map(l => (
-                      <tr key={l.id} className="hover:bg-slate-50">
-                        <td className="p-4">
-                          <p className="font-bold text-slate-800">{l.student?.name}</p>
-                          <p className="text-xs text-slate-500">{l.student?.class_name}</p>
-                        </td>
-                        <td className="p-4">
-                          <p className="text-sm font-medium text-slate-700">{l.category?.name || l.structure?.category?.name || l.structure?.fee_category}</p>
-                          {l.structure && (
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                              From: {l.structure.class_name} · {l.structure.frequency}
-                            </p>
-                          )}
-                        </td>
-                        <td className="p-4 font-bold text-slate-800">₹{l.total_due.toLocaleString()}</td>
-                        <td className="p-4 font-bold text-emerald-600">₹{l.amount_paid.toLocaleString()}</td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${l.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' :
-                            l.status === 'Overdue' ? 'bg-rose-100 text-rose-700' :
-                              'bg-amber-100 text-amber-700'
-                            }`}>
-                            {l.status}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => handleViewHistory(l)}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                              title="View Receipts"
-                            >
-                              <FileText size={14} /> History
-                            </button>
-                            {l.status !== 'Paid' && (
-                              <button
-                                onClick={() => handleOpenPayment(l)}
-                                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                              >
-                                <CreditCard size={14} /> Collect
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
-        </>
-      )}
+          
+          <LedgerTable
+            groups={filteredGroups}
+            activeYear={activeYear}
+            onViewHistory={handleViewHistory}
+            onCollect={handleOpenPayment}
+          />
+        </div>
 
+      )}
       {/* Payment History Modal */}
-      {historyTarget && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Payment History</h2>
-                <p className="text-sm text-slate-500 mt-1">{historyTarget.student?.name} • {historyTarget.structure?.category?.name || historyTarget.structure?.fee_category}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handlePrintInvoice(historyTarget, paymentHistory)}
-                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5"
-                  title="Generate full student invoice"
-                >
-                  <FileText size={14} /> Print Invoice
-                </button>
-                <button
-                  onClick={() => setHistoryTarget(null)}
-                  className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
+      <HistoryModal
+        historyTarget={historyTarget}
+        paymentHistory={paymentHistory}
+        onClose={() => setHistoryTarget(null)}
+        onPrintInvoice={() => handlePrintInvoice(historyTarget!, paymentHistory)}
+        onPrintReceipt={(html) => printReceipt(html)}
+        onReversePayment={(pay) => { setReversalTarget(pay); setReversalNote(''); }}
+        canDelete={can('fees.delete')}
+      />
 
-            <div className="p-0 overflow-y-auto flex-1">
-              {paymentHistory.length === 0 && !historyTarget.discount_amount && historyTarget.status !== 'Waived' ? (
-                <div className="p-12 text-center text-slate-500">
-                  No payments or adjustments recorded yet.
-                </div>
-              ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider sticky top-0">
-                      <th className="p-4 font-semibold">Date</th>
-                      <th className="p-4 font-semibold">Receipt/Ref</th>
-                      <th className="p-4 font-semibold">Mode</th>
-                      <th className="p-4 font-semibold">Reference</th>
-                      <th className="p-4 font-semibold text-right">Amount</th>
-                      <th className="p-4 font-semibold text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {historyTarget.status === 'Waived' && (
-                      <tr className="bg-rose-50/50">
-                        <td className="p-4 text-sm font-medium text-rose-800">
-                          -
-                        </td>
-                        <td className="p-4 text-sm font-mono text-rose-500">ADJUSTMENT</td>
-                        <td className="p-4">
-                          <span className="px-2 py-1 bg-rose-100 text-rose-700 rounded text-xs font-bold uppercase">
-                            WAIVED
-                          </span>
-                        </td>
-                        <td className="p-4 text-sm text-slate-500">-</td>
-                        <td className="p-4 text-sm font-bold text-rose-600 text-right">
-                          WAIVED
-                        </td>
-                        <td className="p-4 text-right"></td>
-                      </tr>
-                    )}
-                    {historyTarget.discount_amount > 0 && (
-                      <tr className="bg-amber-50/50">
-                        <td className="p-4 text-sm font-medium text-amber-800">
-                          -
-                        </td>
-                        <td className="p-4 text-sm font-mono text-amber-500">ADJUSTMENT</td>
-                        <td className="p-4">
-                          <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs font-bold uppercase">
-                            DISCOUNT
-                          </span>
-                        </td>
-                        <td className="p-4 text-sm text-slate-500">-</td>
-                        <td className="p-4 text-sm font-bold text-amber-600 text-right">
-                          -₹{historyTarget.discount_amount.toLocaleString()}
-                        </td>
-                        <td className="p-4 text-right"></td>
-                      </tr>
-                    )}
-                    {paymentHistory.map(pay => (
-                      <tr key={pay.id} className="hover:bg-slate-50">
-                        <td className="p-4 text-sm font-medium text-slate-800">
-                          {new Date(pay.payment_date || '').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </td>
-                        <td className="p-4 text-sm font-mono text-slate-500">{pay.receipt_number}</td>
-                        <td className="p-4">
-                          <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-bold uppercase">
-                            {pay.payment_mode}
-                          </span>
-                        </td>
-                        <td className="p-4 text-sm text-slate-500">{pay.reference_number || '-'}</td>
-                        <td className="p-4 text-sm font-bold text-emerald-600 text-right">
-                          ₹{pay.amount.toLocaleString()}
-                        </td>
-                        <td className="p-4 text-right">
-                          {pay.status === 'Refunded' ? (
-                            <div className="flex flex-col items-end gap-0.5">
-                              <span className="px-2 py-1 bg-rose-100 text-rose-600 text-xs font-bold rounded-md">REVERSED</span>
-                              {pay.reversal_note && (
-                                <span className="text-[10px] text-slate-400 max-w-[120px] text-right">{pay.reversal_note}</span>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="flex justify-end gap-1.5">
-                              <button
-                                onClick={() => {
-                                  const html = generateFeeReceiptHtml(
-                                    historyTarget.student?.name || '',
-                                    historyTarget.student?.class_name || '',
-                                    pay,
-                                    historyTarget
-                                  );
-                                  printReceipt(html);
-                                }}
-                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors inline-flex items-center gap-1"
-                                title="Print Receipt"
-                              >
-                                <FileText size={16} /> <span className="text-xs font-bold uppercase">Print</span>
-                              </button>
-                              {can('fees.delete') && (
-                                <button
-                                  onClick={() => { setReversalTarget(pay); setReversalNote(''); }}
-                                  className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors inline-flex items-center gap-1"
-                                  title="Reverse this payment"
-                                >
-                                  <RotateCcw size={16} /> <span className="text-xs font-bold uppercase">Reverse</span>
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+      <ReversalDialog
+        reversalTarget={reversalTarget}
+        reversalNote={reversalNote}
+        setReversalNote={setReversalNote}
+        isReversing={isReversing}
+        onClose={() => { setReversalTarget(null); setReversalNote(''); }}
+        onConfirm={handleReversePayment}
+      />
 
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setHistoryTarget(null)}
-                className="px-6 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reversal Confirmation Dialog */}
-      {reversalTarget && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
-          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-rose-100 bg-rose-50">
-              <div className="flex items-center gap-3">
-                <RotateCcw size={20} className="text-rose-600" />
-                <h2 className="text-lg font-bold text-rose-800">Reverse Payment</h2>
-              </div>
-              <p className="text-sm text-rose-600 mt-1">
-                ₹{reversalTarget.amount.toLocaleString()} • {reversalTarget.receipt_number}
-              </p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
-                ⚠️ This will mark the payment as <strong>Refunded</strong> and reduce the student's paid amount. The record is preserved for audit.
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">Reason for Reversal *</label>
-                <textarea
-                  value={reversalNote}
-                  onChange={e => setReversalNote(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none h-20"
-                  placeholder="e.g. Cheque bounced, duplicate entry..."
-                />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setReversalTarget(null); setReversalNote(''); }}
-                  disabled={isReversing}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-sm transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleReversePayment}
-                  disabled={isReversing || !reversalNote.trim()}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <RotateCcw size={15} /> {isReversing ? 'Reversing...' : 'Confirm Reversal'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Payment Modal */}
-      {paymentTarget && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-            <div className="p-6 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800">Record Payment</h2>
-              <p className="text-sm text-slate-500 mt-1">Collecting fee for {paymentTarget.student?.name}</p>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6 flex justify-between items-center">
-                <div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Pending Balance</p>
-                  <p className="text-2xl font-extrabold text-slate-800">₹{(paymentTarget.total_due - paymentTarget.amount_paid).toLocaleString()}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Fee Type</p>
-                  <p className="text-sm font-bold text-indigo-600">{paymentTarget.structure?.category?.name || paymentTarget.structure?.fee_category}</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Amount Received (₹)</label>
-                <input
-                  type="number"
-                  value={payAmount}
-                  onChange={e => setPayAmount(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Payment Mode</label>
-                <select
-                  value={payMode}
-                  onChange={e => setPayMode(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="UPI">UPI</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Cheque">Cheque</option>
-                </select>
-              </div>
-
-              {['UPI', 'Cheque', 'Bank Transfer'].includes(payMode) && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Reference Number *</label>
-                  <input
-                    type="text"
-                    value={payRef}
-                    onChange={e => setPayRef(e.target.value)}
-                    className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                    placeholder="Transaction ID or Cheque No."
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Remarks (Optional)</label>
-                <input
-                  type="text"
-                  value={payRemarks}
-                  onChange={e => setPayRemarks(e.target.value)}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                  placeholder="Additional notes"
-                />
-              </div>
-            </div>
-
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <button
-                onClick={() => setPaymentTarget(null)}
-                disabled={isPaying}
-                className="flex-1 py-3 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl font-bold transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRecordPayment}
-                disabled={isPaying}
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors shadow-sm disabled:opacity-50"
-              >
-                {isPaying ? 'Processing...' : 'Record Payment'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RecordPaymentModal
+        paymentTarget={paymentTarget}
+        payAmount={payAmount}
+        setPayAmount={setPayAmount}
+        payMode={payMode}
+        setPayMode={setPayMode}
+        payRef={payRef}
+        setPayRef={setPayRef}
+        payRemarks={payRemarks}
+        setPayRemarks={setPayRemarks}
+        payPeriodType={payPeriodType}
+        setPayPeriodType={setPayPeriodType}
+        payPeriodValue={payPeriodValue}
+        setPayPeriodValue={setPayPeriodValue}
+        isPaying={isPaying}
+        onClose={() => setPaymentTarget(null)}
+        onConfirm={handleRecordPayment}
+      />
     </div>
   );
 }
