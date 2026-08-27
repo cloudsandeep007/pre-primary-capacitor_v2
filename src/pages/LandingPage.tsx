@@ -89,21 +89,7 @@ export function LandingPage() {
           </button>
         </div>
 
-        {/* Onboarding Quick Links */}
-        <div className="mt-6 flex flex-wrap gap-4 justify-center text-xs font-semibold">
-          <button
-            onClick={() => navigate('/onboarding/staff')}
-            className="px-3.5 py-2 rounded-xl bg-white border border-sky-200 text-sky-700 hover:bg-sky-50 transition-colors shadow-sm"
-          >
-            ➕ Teacher Onboarding & Photo Setup
-          </button>
-          <button
-            onClick={() => navigate('/onboarding/parent')}
-            className="px-3.5 py-2 rounded-xl bg-white border border-teal-200 text-teal-700 hover:bg-teal-50 transition-colors shadow-sm"
-          >
-            👨‍👩‍👧 Parent & Child Onboarding
-          </button>
-        </div>
+
 
         {/* Feature highlights */}
         <div className="mt-12 grid grid-cols-3 gap-3 w-full max-w-md">

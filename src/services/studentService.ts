@@ -179,6 +179,76 @@ export const studentService = {
 
       const normalized = normalizeStudent(inserted, studentPayload.roll_no);
 
+      // ── Parent Seeding ────────────────────────────────────────────────────────
+      // If a parent email was provided, ensure a parent record exists in the
+      // public.parents table and is linked to this student via student_parents.
+      // This is required for the verify_and_link_parent RPC to succeed on
+      // Google/PIN login. Without this, the parent cannot log in.
+      const parentEmail = (studentPayload as any).parent_email?.trim()?.toLowerCase();
+      if (parentEmail && inserted?.id) {
+        try {
+          // Upsert parent — safe if already exists (e.g., sibling onboarding)
+          const { data: parentRow, error: parentErr } = await supabase
+            .from('parents')
+            .upsert(
+              {
+                email: parentEmail,
+                name: studentPayload.guardian_name || 'Parent',
+                phone: studentPayload.parent_phone || null,
+              },
+              { onConflict: 'email', ignoreDuplicates: false }
+            )
+            .select('id')
+            .single();
+
+          if (parentErr) {
+            // Non-fatal — log and continue. Student was created successfully.
+            logger.warn('STUDENT_SERVICE_PARENT_UPSERT_FAILED', {
+              error: parentErr.message,
+              parentEmail,
+              traceId,
+            });
+          } else if (parentRow?.id) {
+            // Link parent to student via junction table
+            const { error: linkErr } = await supabase
+              .from('student_parents')
+              .upsert(
+                {
+                  student_id: inserted.id,
+                  parent_id: parentRow.id,
+                  relationship_type: 'Guardian',
+                  is_primary: true,
+                },
+                { onConflict: 'student_id,parent_id', ignoreDuplicates: true }
+              );
+
+            if (linkErr) {
+              logger.warn('STUDENT_SERVICE_PARENT_LINK_FAILED', {
+                error: linkErr.message,
+                parentId: parentRow.id,
+                studentId: inserted.id,
+                traceId,
+              });
+            } else {
+              logger.info('STUDENT_SERVICE_PARENT_SEEDED', {
+                parentEmail,
+                parentId: parentRow.id,
+                studentId: inserted.id,
+                traceId,
+              });
+            }
+          }
+        } catch (parentSeedErr) {
+          // Non-fatal — student creation succeeded; parent seeding is best-effort
+          logger.warn('STUDENT_SERVICE_PARENT_SEED_EXCEPTION', {
+            error: String(parentSeedErr),
+            parentEmail,
+            traceId,
+          });
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       // Audit: student was successfully created
       auditLog({
         actor_type: 'parent',
@@ -188,6 +258,7 @@ export const studentService = {
         metadata: {
           class_name: normalized.class_name,
           roll_no: normalized.roll_no,
+          parent_email_seeded: !!parentEmail,
           traceId,
         },
       });
