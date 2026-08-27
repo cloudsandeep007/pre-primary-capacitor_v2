@@ -39,7 +39,7 @@ WHERE
   AND TRIM(s.parent_email) <> ''
 ORDER BY
   LOWER(TRIM(s.parent_email)),
-  s.created_at DESC  -- Use most recent student record for name/phone if siblings
+  s.id DESC  -- Tie-breaker for siblings; s.id is always present
 ON CONFLICT (email) DO NOTHING;
 
 -- Step 3: Link backfilled parents to their students via student_parents
